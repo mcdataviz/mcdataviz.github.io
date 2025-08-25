@@ -211,10 +211,10 @@
           },
         };
 
-        const ctx = document.getElementById(canvasId);
-        recencyChart?.destroy();
+        const canvas = document.getElementById(canvasId);
+        canvas._chartInstance?.destroy();
 
-        recencyChart = new Chart(ctx, {
+        const chart = new Chart(canvas, {
           type: "scatter",
           data: {
             datasets: [
@@ -274,7 +274,7 @@
           plugins: [robustBands],
         });
 
-        ctx._chartInstance = chart;
+        canvas._chartInstance = chart;
       }
 
       function toNum(v) {
