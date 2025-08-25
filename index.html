@@ -375,6 +375,58 @@
             showlegend: false,
           });
         }
+        if (p05 != null) {
+          shapes.push({
+            type: "line",
+            x0: p05,
+            x1: p05,
+            y0: -0.2,
+            y1: 0.2,
+            line: { color: "#999", width: 2, dash: "dot" },
+          });
+          annotations.push({
+            x: p05,
+            y: -0.25,
+            text: "P5",
+            showarrow: false,
+            yanchor: "top",
+            font: { size: 10 },
+          });
+          data.push({
+            x: [p05],
+            y: [0],
+            mode: "markers",
+            marker: { size: 1, color: "rgba(0,0,0,0)" },
+            hovertemplate: `P5: ${fmtDuration(p05)}<extra></extra>`,
+            showlegend: false,
+          });
+        }
+        if (p95 != null) {
+          shapes.push({
+            type: "line",
+            x0: p95,
+            x1: p95,
+            y0: -0.2,
+            y1: 0.2,
+            line: { color: "#999", width: 2, dash: "dot" },
+          });
+          annotations.push({
+            x: p95,
+            y: -0.25,
+            text: "P95",
+            showarrow: false,
+            yanchor: "top",
+            font: { size: 10 },
+          });
+          data.push({
+            x: [p95],
+            y: [0],
+            mode: "markers",
+            marker: { size: 1, color: "rgba(0,0,0,0)" },
+            hovertemplate: `P95: ${fmtDuration(p95)}<extra></extra>`,
+            showlegend: false,
+          });
+        }
         if (max != null) {
           shapes.push({
             type: "line",
