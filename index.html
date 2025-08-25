@@ -59,6 +59,12 @@
             height="200"
           ></canvas>
         </div>
+        <div class="bg-white p-4 rounded shadow md:col-span-2">
+          <h3 class="text-lg font-semibold mb-4">Escala robusta</h3>
+          <div class="h-24">
+            <canvas id="robustBullet"></canvas>
+          </div>
+        </div>
       </div>
 
     <div id="otherCards" class="grid md:grid-cols-3 gap-4"></div>
@@ -111,6 +117,174 @@
             return `<span class="${cls}">${match}</span>`;
           },
         );
+      }
+
+      function renderRobustBullet(
+        canvasId,
+        f,
+        { currency = "ARS", title = null } = {},
+      ) {
+        const med = +((f?.robust_stats?.median_abs) ?? 0);
+        const mad = +((f?.robust_stats?.mad_abs) ?? 0);
+        const frac = +((f?.robust_stats?.["frac_outlier_z>=3.5"]) ?? 0);
+
+        const p95 = f?.totals?.p95_abs ?? null;
+        const p99 = f?.totals?.p99_abs ?? null;
+
+        const kOut = 3.5 / 0.6745; // ≈ 5.187
+
+        const loTyp = med - 2 * mad;
+        const hiTyp = med + 2 * mad;
+        const loOut = med - kOut * mad;
+        const hiOut = med + kOut * mad;
+
+        const xMin = Math.min(isFinite(loOut) ? loOut : med - 2 * mad, 0, med * 0.8);
+        const baseMax = Math.max(
+          isFinite(hiOut) ? hiOut : med + 2 * mad,
+          med + 2 * mad,
+        );
+        const xMax = Math.max(baseMax, (p99 ?? baseMax) * 1.1);
+
+        const fmt = new Intl.NumberFormat("es-AR", {
+          style: "currency",
+          currency,
+          maximumFractionDigits: 0,
+        });
+
+        const markers = [{ x: med, y: 0.5, label: "Mediana" }];
+        if (p95 != null && isFinite(p95)) markers.push({ x: +p95, y: 0.5, label: "P95" });
+        if (p99 != null && isFinite(p99)) markers.push({ x: +p99, y: 0.5, label: "P99" });
+
+        const robustBands = {
+          id: "robustBands",
+          beforeDatasetsDraw(chart) {
+            const {
+              ctx,
+              chartArea,
+              scales: { x, y },
+            } = chart;
+            if (!chartArea) return;
+
+            const y1 = chartArea.top + chartArea.height * 0.4;
+            const y2 = chartArea.top + chartArea.height * 0.6;
+
+            const xr = (val) => x.getPixelForValue(val);
+            const rect = (from, to, alpha) => {
+              if (!isFinite(from) || !isFinite(to)) return;
+              const left = xr(Math.min(from, to));
+              const width = Math.abs(xr(to) - xr(from));
+              ctx.save();
+              ctx.globalAlpha = alpha;
+              ctx.fillStyle = "#999";
+              ctx.fillRect(left, y1, width, y2 - y1);
+              ctx.restore();
+            };
+            const vline = (val, dash = [4, 3]) => {
+              if (!isFinite(val)) return;
+              const xp = xr(val);
+              ctx.save();
+              ctx.setLineDash(dash);
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = "#333";
+              ctx.beginPath();
+              ctx.moveTo(xp, chartArea.top + 6);
+              ctx.lineTo(xp, chartArea.bottom - 6);
+              ctx.stroke();
+              ctx.restore();
+            };
+
+            rect(loOut, hiOut, 0.15);
+            rect(loTyp, hiTyp, 0.35);
+
+            vline(med, [6, 3]);
+            if (p95 != null) vline(+p95, [4, 4]);
+            if (p99 != null) vline(+p99, [2, 3]);
+          },
+          afterDatasetsDraw(chart) {
+            const { ctx, chartArea, scales: { x } } = chart;
+            const drawLabel = (val, text) => {
+              if (!isFinite(val)) return;
+              const xp = x.getPixelForValue(val);
+              ctx.save();
+              ctx.font = "10px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+              ctx.fillStyle = "#111";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "bottom";
+              ctx.fillText(text, xp, chartArea.top + 4);
+              ctx.restore();
+            };
+            drawLabel(med, "Mediana");
+            if (p95 != null) drawLabel(+p95, "P95");
+            if (p99 != null) drawLabel(+p99, "P99");
+          },
+        };
+
+        const ctx = document.getElementById(canvasId).getContext("2d");
+        if (ctx._chartInstance) {
+          ctx._chartInstance.destroy();
+        }
+
+        const chart = new Chart(ctx, {
+          type: "scatter",
+          data: {
+            datasets: [
+              {
+                label: "Marcadores",
+                data: markers,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                showLine: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label(ctx) {
+                    const raw = ctx.raw || {};
+                    const name = raw.label || "Valor";
+                    const val = ctx.parsed?.x;
+                    return `${name}: ${fmt.format(val)}`;
+                  },
+                  title() {
+                    return "";
+                  },
+                },
+              },
+              title: {
+                display: true,
+                text:
+                  title ||
+                  `Escala robusta • outliers ≈ ${(frac * 100).toFixed(1)}%`,
+              },
+            },
+            scales: {
+              x: {
+                type: "linear",
+                suggestedMin: xMin,
+                suggestedMax: xMax,
+                ticks: {
+                  callback: (v) => fmt.format(v),
+                },
+                grid: { drawOnChartArea: true },
+              },
+              y: {
+                type: "linear",
+                min: 0,
+                max: 1,
+                display: false,
+                grid: { display: false },
+              },
+            },
+          },
+          plugins: [robustBands],
+        });
+
+        ctx._chartInstance = chart;
       }
 
       const LABELS = {
@@ -298,6 +472,10 @@
           },
           options: { scales: { y: { beginAtZero: true } } },
         });
+      }
+
+      if (data.robust_stats) {
+        renderRobustBullet("robustBullet", data, { currency: "ARS" });
       }
 
       if (data.temporal && data.temporal.hour_hist) {
