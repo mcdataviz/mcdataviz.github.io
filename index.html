@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gaugeJS@1.3.7/dist/gauge.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
   </head>
   <body class="bg-gray-100">
     <div id="dashboard" class="max-w-5xl mx-auto p-4 space-y-6">
@@ -40,11 +41,10 @@
 
       <div>
         <h3 class="text-lg font-semibold mb-2">Recencia</h3>
-        <canvas
+        <div
           id="recencyBullet"
-          class="bg-white p-2 rounded w-full"
-          height="200"
-        ></canvas>
+          class="bg-white p-2 rounded w-full h-48"
+        ></div>
       </div>
 
       <div class="grid md:grid-cols-2 gap-4">
@@ -73,7 +73,6 @@
       // Parse JSON from query param 'p'
       let data = {};
       let rawData = {};
-      let recencyChart;
       try {
         const params = new URLSearchParams(window.location.search);
         const p = params.get("p");
@@ -302,7 +301,7 @@
       }
 
       // Recency chart rendered similarly to robust bullet using Chart.js
-      function renderRecencyBullet(canvasId, f, { title = "Recencia • P05–P95 con Mediana/Media" } = {}) {
+      function renderRecencyBullet(divId, f, { title = "Recencia • P05–P95 con Mediana/Media" } = {}) {
         const r = (f && f.recency) || {};
         const p05 = toNum(r.p05_delta_s);
         const p95 = toNum(r.p95_delta_s);
@@ -315,131 +314,99 @@
         const baseMax = Math.max(...values, 1);
         const xMax = baseMax * 1.1;
 
-        const markers = [];
-        if (med != null) markers.push({ x: med, y: 0.5, label: "Mediana" });
-        if (mean != null) markers.push({ x: mean, y: 0.5, label: "Media" });
+        const step = (xMax - xMin) / 4;
+        const tickVals = Array.from({ length: 5 }, (_, i) => xMin + i * step);
+        const tickText = tickVals.map((v) => fmtDuration(v));
 
-        const recencyPlugin = {
-          id: "recencyBullet",
-          beforeDatasetsDraw(chart) {
-            const {
-              ctx,
-              chartArea,
-              scales: { x },
-            } = chart;
-            const y = chartArea.top + chartArea.height / 2;
-            const drawLine = (val, dash) => {
-              if (!isFinite(val)) return;
-              const xv = x.getPixelForValue(val);
-              ctx.save();
-              ctx.setLineDash(dash);
-              ctx.strokeStyle = "#333";
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(xv, chartArea.top);
-              ctx.lineTo(xv, chartArea.bottom);
-              ctx.stroke();
-              ctx.restore();
-            };
-            const xp05 = x.getPixelForValue(p05);
-            const xp95 = x.getPixelForValue(p95);
-            if (isFinite(xp05) && isFinite(xp95)) {
-              ctx.save();
-              ctx.strokeStyle = "#999";
-              ctx.lineWidth = 6;
-              ctx.beginPath();
-              ctx.moveTo(Math.min(xp05, xp95), y);
-              ctx.lineTo(Math.max(xp05, xp95), y);
-              ctx.stroke();
-              ctx.fillStyle = "#999";
-              ctx.beginPath();
-              ctx.arc(xp05, y, 5, 0, Math.PI * 2);
-              ctx.arc(xp95, y, 5, 0, Math.PI * 2);
-              ctx.fill();
-              ctx.restore();
-            }
-            drawLine(med, [6, 3]);
-            drawLine(mean, [2, 2]);
+        const data = [
+          {
+            x: [p05, p95],
+            y: [0, 0],
+            mode: "lines+markers",
+            line: { color: "#999", width: 8 },
+            marker: { color: "#999", size: 12 },
+            hoverinfo: "skip",
+            showlegend: false,
           },
-          afterDatasetsDraw(chart) {
-            const {
-              ctx,
-              chartArea,
-              scales: { x },
-            } = chart;
-            const drawLabel = (val, text) => {
-              if (!isFinite(val)) return;
-              const xp = x.getPixelForValue(val);
-              ctx.save();
-              ctx.font = "10px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-              ctx.fillStyle = "#111";
-              ctx.textAlign = "center";
-              ctx.textBaseline = "bottom";
-              ctx.fillText(text, xp, chartArea.top + 4);
-              ctx.restore();
-            };
-            drawLabel(med, "Mediana");
-            drawLabel(mean, "Media");
-          },
-        };
+        ];
 
-        const ctx = document.getElementById(canvasId);
-        recencyChart?.destroy();
+        const shapes = [];
+        const annotations = [];
 
-        recencyChart = new Chart(ctx, {
-          type: "scatter",
-          data: {
-            datasets: [
-              {
-                label: "Marcadores",
-                data: markers,
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                showLine: false,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  label(ctx) {
-                    const raw = ctx.raw || {};
-                    const name = raw.label || "Valor";
-                    const val = ctx.parsed?.x;
-                    return `${name}: ${fmtDuration(val)}`;
-                  },
-                  title() {
-                    return "";
-                  },
-                },
-              },
-              title: { display: true, text: title },
+        if (med != null) {
+          shapes.push({
+            type: "line",
+            x0: med,
+            x1: med,
+            y0: -0.2,
+            y1: 0.2,
+            line: { color: "#111", width: 2, dash: "dash" },
+          });
+          annotations.push({
+            x: med,
+            y: 0.25,
+            text: "Mediana",
+            showarrow: false,
+            yanchor: "bottom",
+            font: { size: 10 },
+          });
+          data.push({
+            x: [med],
+            y: [0],
+            mode: "markers",
+            marker: { size: 1, color: "rgba(0,0,0,0)" },
+            hovertemplate: `Mediana: ${fmtDuration(med)}<extra></extra>`,
+            showlegend: false,
+          });
+        }
+        if (mean != null) {
+          shapes.push({
+            type: "line",
+            x0: mean,
+            x1: mean,
+            y0: -0.2,
+            y1: 0.2,
+            line: { color: "#111", width: 2, dash: "dot" },
+          });
+          annotations.push({
+            x: mean,
+            y: 0.25,
+            text: "Media",
+            showarrow: false,
+            yanchor: "bottom",
+            font: { size: 10 },
+          });
+          data.push({
+            x: [mean],
+            y: [0],
+            mode: "markers",
+            marker: { size: 1, color: "rgba(0,0,0,0)" },
+            hovertemplate: `Media: ${fmtDuration(mean)}<extra></extra>`,
+            showlegend: false,
+          });
+        }
+
+        Plotly.react(
+          divId,
+          data,
+          {
+            title: { text: title },
+            shapes,
+            annotations,
+            xaxis: {
+              range: [xMin, xMax],
+              tickmode: "array",
+              tickvals: tickVals,
+              ticktext: tickText,
+              zeroline: false,
             },
-            scales: {
-              x: {
-                type: "linear",
-                suggestedMin: xMin,
-                suggestedMax: xMax,
-                ticks: {
-                  callback: (v) => fmtDuration(v),
-                },
-                grid: { drawOnChartArea: true },
-              },
-              y: {
-                type: "linear",
-                min: 0,
-                max: 1,
-                display: false,
-                grid: { display: false },
-              },
-            },
+            yaxis: { range: [-0.5, 0.5], visible: false },
+            margin: { l: 40, r: 20, t: 40, b: 40 },
+            height: 200,
+            hovermode: "x",
           },
-          plugins: [recencyPlugin],
-        });
+          { displayModeBar: false },
+        );
       }
 
       const LABELS = {
