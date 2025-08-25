@@ -18,35 +18,31 @@
           <h3 class="text-lg font-semibold mb-2">Histograma horario</h3>
           <canvas id="hourChart" class="bg-white p-2 rounded" height="200"></canvas>
         </div>
-        <div>
-          <div class="flex items-center mb-2">
-            <h3 class="text-lg font-semibold">% Outliers (Z≥3.5)</h3>
-            <button
-              id="outlierInfo"
-              title="Porcentaje de montos atípicos (z≥3.5)"
-              class="ml-2 text-gray-500 hover:text-gray-700"
-            >
-              <svg
-                class="w-5 h-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z"
-                />
-              </svg>
-            </button>
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-lg font-semibold mb-2">Mediana por segmento</h3>
+            <canvas
+              id="medianSegmentChart"
+              class="bg-white p-2 rounded"
+              height="200"
+            ></canvas>
           </div>
-          <canvas
-            id="outlierGauge"
-            class="bg-white p-2 rounded"
-            height="200"
-          ></canvas>
+          <div>
+            <h3 class="text-lg font-semibold mb-2">MAD por segmento</h3>
+            <canvas
+              id="madSegmentChart"
+              class="bg-white p-2 rounded"
+              height="200"
+            ></canvas>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold mb-2">% Outliers (Z≥3.5) por segmento</h3>
+            <canvas
+              id="outlierSegmentChart"
+              class="bg-white p-2 rounded"
+              height="200"
+            ></canvas>
+          </div>
         </div>
       </div>
 
@@ -291,32 +287,46 @@
         });
       }
 
-      if (data.totals && data.totals["frac_outlier_z>=3.5"] != null) {
-        const val = data.totals["frac_outlier_z>=3.5"] * 100;
-        const gaugeCtx = document.getElementById("outlierGauge");
-        new Chart(gaugeCtx, {
-          type: "doughnut",
-          data: {
-            datasets: [
-              {
-                data: [val, 100 - val],
-                backgroundColor: ["#ef4444", "#e5e7eb"],
-                borderWidth: 0,
+        if (data.robust_segment) {
+          const segs = data.robust_segment.segments;
+          const buildChart = (id, label, values, color, transform) => {
+            const ctx = document.getElementById(id);
+            const vals = transform ? values.map(transform) : values;
+            new Chart(ctx, {
+              type: "bar",
+              data: {
+                labels: segs,
+                datasets: [
+                  {
+                    label,
+                    data: vals,
+                    backgroundColor: color,
+                  },
+                ],
               },
-            ],
-          },
-          options: {
-            rotation: -Math.PI,
-            circumference: Math.PI,
-            cutout: "70%",
-            plugins: {
-              legend: { display: false },
-              tooltip: { enabled: false },
-              title: { display: true, text: val.toFixed(1) + "%" },
-            },
-          },
-        });
-      }
+              options: { scales: { y: { beginAtZero: true } } },
+            });
+          };
+          buildChart(
+            "medianSegmentChart",
+            LABELS.totals.median_abs,
+            data.robust_segment.median_abs,
+            "#3b82f6",
+          );
+          buildChart(
+            "madSegmentChart",
+            LABELS.totals.mad_abs,
+            data.robust_segment.mad_abs,
+            "#10b981",
+          );
+          buildChart(
+            "outlierSegmentChart",
+            LABELS.totals["frac_outlier_z>=3.5"],
+            data.robust_segment["frac_outlier_z>=3.5"],
+            "#ef4444",
+            (v) => v * 100,
+          );
+        }
 
       if (data.recency && data.recency.delta_hist) {
         const hist = data.recency.delta_hist;
@@ -341,15 +351,7 @@
         delete data.recency.delta_hist;
       }
 
-      document
-        .getElementById("outlierInfo")
-        .addEventListener("click", () =>
-          alert(
-            "Porcentaje de montos considerados atípicos usando z-score robusto ≥ 3.5",
-          ),
-        );
-
-      if (data.temporal) {
+        if (data.temporal) {
         const temporalData = { ...data.temporal };
         delete temporalData.hour_hist;
         addCard("otherCards", "Temporal", temporalData, LABELS.temporal);
