@@ -1,173 +1,324 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Perfil de Actividad Bancaria</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-</head>
-<body>
-<div class="container my-4" id="dashboard">
-    <h1 class="mb-4">Perfil de actividad</h1>
+  </head>
+  <body>
+    <div class="container my-4" id="dashboard">
+      <h1 class="mb-4">Perfil de actividad</h1>
 
-    <!-- Totals and flow chart -->
-    <div class="row" id="totalsCards"></div>
-    <div class="my-4">
+      <!-- Totals and flow chart -->
+      <div class="row" id="totalsCards"></div>
+      <div class="my-4">
         <canvas id="flowChart" height="120"></canvas>
-    </div>
+      </div>
 
-    <!-- Heatmap for hourly distribution -->
-    <div class="my-4">
+      <!-- Heatmap for hourly distribution -->
+      <div class="my-4">
         <h3>Distribución horaria (Heatmap)</h3>
-        <div id="hourHeatmap" class="d-flex flex-wrap" style="width:480px"></div>
-    </div>
+        <div
+          id="hourHeatmap"
+          class="d-flex flex-wrap"
+          style="width: 480px"
+        ></div>
+      </div>
 
-    <div class="row">
+      <div class="row">
         <div class="col-md-6">
-            <h3>Histograma horario</h3>
-            <canvas id="hourChart" height="200"></canvas>
+          <h3>Histograma horario</h3>
+          <canvas id="hourChart" height="200"></canvas>
         </div>
         <div class="col-md-6">
-            <h3>% Outliers (Z≥3.5)</h3>
-            <canvas id="outlierGauge" height="200"></canvas>
+          <h3>% Outliers (Z≥3.5)</h3>
+          <canvas id="outlierGauge" height="200"></canvas>
         </div>
+      </div>
+
+      <!-- Other metric groups -->
+      <div class="row" id="otherCards"></div>
     </div>
 
-    <!-- Other metric groups -->
-    <div class="row" id="otherCards"></div>
-</div>
+    <script>
+      // Parse JSON from query param 'p'
+      let data = {};
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const p = params.get("p");
+        if (p) {
+          data = JSON.parse(decodeURIComponent(p));
+        }
+      } catch (e) {
+        console.error("Error parsing data", e);
+      }
 
-<script>
-// Parse JSON from query param 'p'
-let data = {};
-try {
-    const params = new URLSearchParams(window.location.search);
-    const p = params.get('p');
-    if (p) {
-        data = JSON.parse(decodeURIComponent(p));
-    }
-} catch (e) {
-    console.error('Error parsing data', e);
-}
-
-function formatNumber(num) {
-    return typeof num === 'number' ? num.toLocaleString('es-AR', {maximumFractionDigits: 2}) : num;
-}
-
-function addCard(containerId, title, obj) {
-    const entries = Object.entries(obj || {});
-    if (!entries.length) return;
-    const container = document.getElementById(containerId);
-    const card = document.createElement('div');
-    card.className = 'col-md-4 mb-3';
-    let html = `<div class="card h-100"><div class="card-body"><h5 class="card-title">${title}</h5>`;
-    html += entries.map(([k, v]) => `<p class='card-text'><strong>${k}:</strong> ${formatNumber(v)}</p>`).join('');
-    html += '</div></div>';
-    card.innerHTML = html;
-    container.appendChild(card);
-}
-
-if (data.totals) {
-    addCard('totalsCards', 'Totales', {
-        'Operaciones': data.totals.n_trx,
-        'Ingresos': data.totals.sum_in,
-        'Egresos': data.totals.sum_out,
-        'Neto': data.totals.net
-    });
-
-    const ctx = document.getElementById('flowChart');
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Ingresos', 'Egresos', 'Neto'],
-            datasets: [{
-                data: [data.totals.sum_in, data.totals.sum_out, data.totals.net],
-                backgroundColor: ['#198754', '#dc3545', '#6c757d']
-            }]
+      const LABELS = {
+        tier: "Tier por volumen (1=alto, 5=bajo)",
+        totals: {
+          n_trx: "Operaciones (90 días) (#)",
+          sum_in: "Ingresos ($)",
+          sum_out: "Egresos ($)",
+          net: "Neto ($)",
+          median_abs: "Mediana de monto ($)",
+          mad_abs: "MAD (desvío abs. mediano) ($)",
+          "frac_outlier_z>=3.5": "% outliers (z robusto ≥ 3.5) (%)",
+          max_abs: "Monto máximo ($)",
+          p95_abs: "P95 de monto ($)",
+          p99_abs: "P99 de monto ($)",
         },
-        options: {
+        robust_stats: {
+          median_abs: "Mediana de monto ($)",
+          mad_abs: "MAD ($)",
+          "frac_outlier_z>=3.5": "% outliers robustos (%)",
+        },
+        velocity: {
+          max_cnt_5m: "Máx. ops en 5 min (#)",
+          max_cnt_30m: "Máx. ops en 30 min (#)",
+          max_cnt_60m: "Máx. ops en 60 min (#)",
+          max_cnt_24h: "Máx. ops en 24 h (#)",
+        },
+        recency: {
+          mean_delta_s: "Δt promedio entre ops (seg)",
+          median_delta_s: "Δt mediano (seg)",
+          p05_delta_s: "Δt P5 (seg)",
+          p95_delta_s: "Δt P95 (seg)",
+          min_delta_s: "Δt mínimo (seg)",
+          max_delta_s: "Δt máximo (seg)",
+        },
+        novelty: {
+          first_time_cbu_frac: "% CBUs nuevos (%)",
+          first_time_cuit_frac: "% CUITs nuevos (%)",
+          rare_cbu_frac: "% CBUs raros (<2 tx) (%)",
+          rare_cuit_frac: "% CUITs raros (<2 tx) (%)",
+          new_cbu_count: "CBUs nuevos (#)",
+          new_cuit_count: "CUITs nuevos (#)",
+        },
+        temporal: {
+          hour_jsd_vs_uniform: "Desvío horario vs uniforme (JSD) (0–~0.7)",
+          hour_peak_ratio: "% en hora pico (% del total en la hora más activa)",
+          weekend_frac: "% en fin de semana (%)",
+        },
+        roundness: {
+          pct_amt_mod_100_eq_0: "% montos múltiplos de $100 (%)",
+          pct_amt_mod_1000_eq_0: "% montos múltiplos de $1.000 (%)",
+          last_digit_hist: "Último dígito del monto (histograma 0–9)",
+        },
+        streaks: {
+          max_in_30m: "Racha IN en 30 min (máx) (#)",
+          max_out_30m: "Racha OUT en 30 min (máx) (#)",
+          alternation_rate: "Tasa de alternancia IN↔OUT (0–1)",
+        },
+        location: {
+          unique_checkout: "Checkouts únicos (#)",
+          checkout_changes: "Cambios de checkout (#)",
+          unique_branch: "Sucursales únicas (#)",
+          branch_changes: "Cambios de sucursal (#)",
+        },
+        duplicates: {
+          dup_close_10min_count: "Duplicados ≤10 min (#)",
+        },
+        status: {
+          fail_ratio_overall: "% operaciones fallidas (%)",
+          max_fail_ratio_24h: "Máx. % fallidas en 24 h (%)",
+        },
+        flow: {
+          n_in: "Operaciones IN (#)",
+          n_out: "Operaciones OUT (#)",
+          in_ratio_count: "% IN por cantidad (%)",
+          in_ratio_amount: "% IN por monto (%)",
+        },
+        coherence: {
+          dir_unknown_count: "Operaciones sin dirección (#)",
+          dir_coverage: "Cobertura de dirección (0–1)",
+          in_ratio_count_dir: "IN% (cantidad) por direction (%)",
+          in_ratio_count_type: "IN% (cantidad) por tipo (%)",
+          in_ratio_count_diff: "Δ IN% (cantidad) dir vs tipo (pp)",
+          in_ratio_amount_dir: "IN% (monto) por direction (%)",
+          in_ratio_amount_type: "IN% (monto) por tipo (%)",
+          in_ratio_amount_diff: "Δ IN% (monto) dir vs tipo (pp)",
+          n_rows_used_for_type: "Filas con tipo mapeable (#)",
+        },
+      };
+
+      function formatNumber(num) {
+        if (typeof num === "number") {
+          return num.toLocaleString("es-AR", { maximumFractionDigits: 2 });
+        }
+        if (typeof num === "object") {
+          return JSON.stringify(num);
+        }
+        return num;
+      }
+
+      function addCard(containerId, title, obj, labels = {}) {
+        const entries = Object.entries(obj || {});
+        if (!entries.length) return;
+        const container = document.getElementById(containerId);
+        const card = document.createElement("div");
+        card.className = "col-md-4 mb-3";
+        let html = `<div class="card h-100"><div class="card-body"><h5 class="card-title">${title}</h5>`;
+        html += entries
+          .map(
+            ([k, v]) =>
+              `<p class='card-text'><strong>${labels[k] || k}:</strong> ${formatNumber(v)}</p>`,
+          )
+          .join("");
+        html += "</div></div>";
+        card.innerHTML = html;
+        container.appendChild(card);
+      }
+
+      if (data.tier != null) {
+        const dashboard = document.getElementById("dashboard");
+        const h1 = dashboard.querySelector("h1");
+        const p = document.createElement("p");
+        p.innerHTML = `<strong>${LABELS.tier}:</strong> ${formatNumber(data.tier)}`;
+        h1.insertAdjacentElement("afterend", p);
+      }
+
+      if (data.totals) {
+        addCard("totalsCards", "Totales", data.totals, LABELS.totals);
+
+        const ctx = document.getElementById("flowChart");
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: ["Ingresos", "Egresos", "Neto"],
+            datasets: [
+              {
+                data: [
+                  data.totals.sum_in,
+                  data.totals.sum_out,
+                  data.totals.net,
+                ],
+                backgroundColor: ["#198754", "#dc3545", "#6c757d"],
+              },
+            ],
+          },
+          options: {
             plugins: {
-                legend: { display: false },
-                title: { display: true, text: 'Flujo' }
+              legend: { display: false },
+              title: { display: true, text: "Flujo" },
             },
-            scales: { y: { beginAtZero: true } }
+            scales: { y: { beginAtZero: true } },
+          },
+        });
+      }
+
+      if (data.temporal && data.temporal.hour_hist) {
+        const hist = data.temporal.hour_hist;
+        const max = Math.max(...Object.values(hist));
+        const heatmap = document.getElementById("hourHeatmap");
+        for (let h = 0; h < 24; h++) {
+          const val = hist[h] || 0;
+          const intensity = max ? val / max : 0;
+          const div = document.createElement("div");
+          div.style.width = "40px";
+          div.style.height = "40px";
+          div.style.lineHeight = "40px";
+          div.style.textAlign = "center";
+          div.style.border = "1px solid #dee2e6";
+          div.style.backgroundColor = `rgba(13,110,253,${intensity})`;
+          div.innerText = h;
+          heatmap.appendChild(div);
         }
-    });
-}
 
-if (data.temporal && data.temporal.hour_hist) {
-    const hist = data.temporal.hour_hist;
-    const max = Math.max(...Object.values(hist));
-    const heatmap = document.getElementById('hourHeatmap');
-    for (let h = 0; h < 24; h++) {
-        const val = hist[h] || 0;
-        const intensity = max ? val / max : 0;
-        const div = document.createElement('div');
-        div.style.width = '40px';
-        div.style.height = '40px';
-        div.style.lineHeight = '40px';
-        div.style.textAlign = 'center';
-        div.style.border = '1px solid #dee2e6';
-        div.style.backgroundColor = `rgba(13,110,253,${intensity})`;
-        div.innerText = h;
-        heatmap.appendChild(div);
-    }
-
-    const hours = Object.keys(hist).map(h => parseInt(h)).sort((a,b)=>a-b);
-    const counts = hours.map(h => hist[h]);
-    const hourCtx = document.getElementById('hourChart');
-    new Chart(hourCtx, {
-        type: 'bar',
-        data: {
+        const hours = Object.keys(hist)
+          .map((h) => parseInt(h))
+          .sort((a, b) => a - b);
+        const counts = hours.map((h) => hist[h]);
+        const hourCtx = document.getElementById("hourChart");
+        new Chart(hourCtx, {
+          type: "bar",
+          data: {
             labels: hours,
-            datasets: [{
-                label: 'Operaciones',
+            datasets: [
+              {
+                label: "Operaciones",
                 data: counts,
-                backgroundColor: '#0d6efd'
-            }]
-        },
-        options: {
-            scales: { y: { beginAtZero: true } }
-        }
-    });
-}
+                backgroundColor: "#0d6efd",
+              },
+            ],
+          },
+          options: {
+            scales: { y: { beginAtZero: true } },
+          },
+        });
+      }
 
-if (data.totals && data.totals['frac_outlier_z>=3.5'] != null) {
-    const val = data.totals['frac_outlier_z>=3.5'] * 100;
-    const gaugeCtx = document.getElementById('outlierGauge');
-    new Chart(gaugeCtx, {
-        type: 'doughnut',
-        data: {
-            datasets: [{
+      if (data.totals && data.totals["frac_outlier_z>=3.5"] != null) {
+        const val = data.totals["frac_outlier_z>=3.5"] * 100;
+        const gaugeCtx = document.getElementById("outlierGauge");
+        new Chart(gaugeCtx, {
+          type: "doughnut",
+          data: {
+            datasets: [
+              {
                 data: [val, 100 - val],
-                backgroundColor: ['#dc3545', '#e9ecef'],
-                borderWidth: 0
-            }]
-        },
-        options: {
+                backgroundColor: ["#dc3545", "#e9ecef"],
+                borderWidth: 0,
+              },
+            ],
+          },
+          options: {
             rotation: -Math.PI,
             circumference: Math.PI,
-            cutout: '70%',
+            cutout: "70%",
             plugins: {
-                legend: { display: false },
-                tooltip: { enabled: false },
-                title: { display: true, text: val.toFixed(1) + '%'}
-            }
-        }
-    });
-}
+              legend: { display: false },
+              tooltip: { enabled: false },
+              title: { display: true, text: val.toFixed(1) + "%" },
+            },
+          },
+        });
+      }
 
-// Other groups
-addCard('otherCards', 'Velocidad', data.velocity || {});
-addCard('otherCards', 'Recency', data.recency || {});
-addCard('otherCards', 'Novedad', data.novelty || {});
-addCard('otherCards', 'Roundness', data.roundness || {});
-addCard('otherCards', 'Streaks', data.streaks || {});
-addCard('otherCards', 'Flow', data.flow || {});
-addCard('otherCards', 'Coherence', data.coherence || {});
-addCard('otherCards', 'Status', data.status || {});
-addCard('otherCards', 'Duplicates', data.duplicates || {});
-</script>
-</body>
+      if (data.temporal) {
+        const temporalData = { ...data.temporal };
+        delete temporalData.hour_hist;
+        addCard("otherCards", "Temporal", temporalData, LABELS.temporal);
+      }
+
+      if (data.robust_stats)
+        addCard(
+          "otherCards",
+          "Estadísticas robustas",
+          data.robust_stats,
+          LABELS.robust_stats,
+        );
+      if (data.velocity)
+        addCard("otherCards", "Velocidad", data.velocity, LABELS.velocity);
+      if (data.recency)
+        addCard("otherCards", "Recencia", data.recency, LABELS.recency);
+      if (data.novelty)
+        addCard("otherCards", "Novedad", data.novelty, LABELS.novelty);
+      if (data.type_freq)
+        addCard("otherCards", "Frecuencia por tipo", data.type_freq);
+      if (data.type_group_freq)
+        addCard(
+          "otherCards",
+          "Frecuencia por grupo de tipo",
+          data.type_group_freq,
+        );
+      if (data.roundness)
+        addCard("otherCards", "Redondez", data.roundness, LABELS.roundness);
+      if (data.streaks)
+        addCard("otherCards", "Rachas", data.streaks, LABELS.streaks);
+      if (data.location)
+        addCard("otherCards", "Ubicación", data.location, LABELS.location);
+      if (data.flow) addCard("otherCards", "Flujo", data.flow, LABELS.flow);
+      if (data.coherence)
+        addCard("otherCards", "Coherencia", data.coherence, LABELS.coherence);
+      if (data.status)
+        addCard("otherCards", "Estado", data.status, LABELS.status);
+      if (data.duplicates)
+        addCard("otherCards", "Duplicados", data.duplicates, LABELS.duplicates);
+    </script>
+  </body>
 </html>
