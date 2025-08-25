@@ -54,7 +54,7 @@
         <div>
           <h3 class="text-lg font-semibold mb-2">Recencia</h3>
           <canvas
-            id="recencyHist"
+            id="recencyDumbbell"
             class="bg-white p-2 rounded"
             height="200"
           ></canvas>
@@ -282,6 +282,171 @@
             },
           },
           plugins: [robustBands],
+        });
+
+        ctx._chartInstance = chart;
+      }
+
+      function toNum(v) {
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function fmtDuration(seconds) {
+        if (!Number.isFinite(seconds)) return '';
+        const sign = seconds < 0 ? '-' : '';
+        let s = Math.abs(seconds);
+        const d = Math.floor(s / 86400);
+        s -= d * 86400;
+        const h = Math.floor(s / 3600);
+        s -= h * 3600;
+        const m = Math.floor(s / 60);
+        s -= m * 60;
+        const parts = [];
+        if (d) parts.push(`${d}d`);
+        if (h) parts.push(`${h}h`);
+        if (m) parts.push(`${m}m`);
+        parts.push(`${Math.floor(s)}s`);
+        return sign + parts.join(' ');
+      }
+
+      function renderRecencyDumbbell(canvasId, f, { title = "Recencia (P05–P95 con marcadores)" } = {}) {
+        const r = (f && f.recency) || {};
+        const p05   = toNum(r.p05_delta_s);
+        const p95   = toNum(r.p95_delta_s);
+        const med   = toNum(r.median_delta_s);
+        const mean  = toNum(r.mean_delta_s);
+
+        const values = [p05, p95, med, mean].filter(v => v != null);
+        const xMin = Math.max(0, Math.min(...values, 0));
+        const baseMax = Math.max(...values, 1);
+        const xMax = baseMax * 1.1;
+
+        const endpoints = [];
+        if (p05 != null) endpoints.push({ x: p05, y: 0.5, label: "P05" });
+        if (p95 != null) endpoints.push({ x: p95, y: 0.5, label: "P95" });
+
+        const markers = [];
+        if (med != null) markers.push({ x: med, y: 0.5, label: "Mediana" });
+        if (mean != null) markers.push({ x: mean, y: 0.5, label: "Media" });
+
+        const dumbbellPlugin = {
+          id: 'dumbbellPlugin',
+          beforeDatasetsDraw(chart) {
+            const { ctx, chartArea, scales: { x } } = chart;
+            if (!chartArea) return;
+            const y = chartArea.top + chartArea.height * 0.5;
+            const xp05 = Number.isFinite(p05) ? x.getPixelForValue(p05) : null;
+            const xp95 = Number.isFinite(p95) ? x.getPixelForValue(p95) : null;
+
+            ctx.save();
+            if (xp05 != null && xp95 != null) {
+              ctx.lineWidth = 6;
+              ctx.strokeStyle = '#999';
+              ctx.beginPath();
+              ctx.moveTo(Math.min(xp05, xp95), y);
+              ctx.lineTo(Math.max(xp05, xp95), y);
+              ctx.stroke();
+            }
+
+            const drawV = (val, dash=[4,3]) => {
+              if (!Number.isFinite(val)) return;
+              const xv = x.getPixelForValue(val);
+              ctx.setLineDash(dash);
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = '#333';
+              ctx.beginPath();
+              ctx.moveTo(xv, chartArea.top + 6);
+              ctx.lineTo(xv, chartArea.bottom - 6);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            };
+            drawV(med, [6,3]);
+            drawV(mean, [2,2]);
+
+            ctx.restore();
+          },
+          afterDatasetsDraw(chart) {
+            const { ctx, chartArea, scales: { x } } = chart;
+            const labelAbove = (val, text) => {
+              if (!Number.isFinite(val)) return;
+              const xv = x.getPixelForValue(val);
+              ctx.save();
+              ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+              ctx.fillStyle = '#111';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              ctx.fillText(text, xv, chartArea.top + 4);
+              ctx.restore();
+            };
+            labelAbove(med, 'Mediana');
+            labelAbove(mean, 'Media');
+          }
+        };
+
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        if (ctx._chartInstance) ctx._chartInstance.destroy();
+
+        const chart = new Chart(ctx, {
+          type: 'scatter',
+          data: {
+            datasets: [
+              {
+                label: 'Extremos',
+                data: endpoints,
+                pointRadius: 5,
+                pointHoverRadius: 6,
+                showLine: false
+              },
+              {
+                label: 'Marcadores',
+                data: markers,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                showLine: false
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              title: { display: true, text: title },
+              tooltip: {
+                callbacks: {
+                  label(ctx) {
+                    const raw = ctx.raw || {};
+                    const name = raw.label || ctx.dataset.label || 'Valor';
+                    const val = ctx.parsed?.x;
+                    return `${name}: ${fmtDuration(val)}`;
+                  },
+                  title() { return ''; }
+                }
+              }
+            },
+            scales: {
+              x: {
+                type: 'linear',
+                suggestedMin: xMin,
+                suggestedMax: xMax,
+                grid: { drawOnChartArea: true },
+                ticks: {
+                  callback: (v) => fmtDuration(v)
+                },
+                title: { display: true, text: 'Δt entre operaciones' }
+              },
+              y: {
+                type: 'linear',
+                min: 0,
+                max: 1,
+                display: false,
+                grid: { display: false }
+              }
+            }
+          },
+          plugins: [dumbbellPlugin]
         });
 
         ctx._chartInstance = chart;
@@ -543,26 +708,12 @@
         }
 
       if (data.recency && data.recency.delta_hist) {
-        const hist = data.recency.delta_hist;
-        const bins = Object.keys(hist)
-          .map((b) => parseInt(b))
-          .sort((a, b) => a - b);
-        const counts = bins.map((b) => hist[b]);
-        const recCtx = document.getElementById("recencyHist");
-        new Chart(recCtx, {
-          type: "bar",
-          data: {
-            labels: bins,
-            datasets: [
-              {
-                data: counts,
-                backgroundColor: "#10b981",
-              },
-            ],
-          },
-          options: { scales: { y: { beginAtZero: true } } },
-        });
         delete data.recency.delta_hist;
+      }
+      if (data.recency) {
+        renderRecencyDumbbell('recencyDumbbell', data, {
+          title: 'Recencia • P05–P95 con Mediana/Media'
+        });
       }
 
         if (data.temporal) {
