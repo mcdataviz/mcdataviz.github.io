@@ -6,6 +6,7 @@
     <title>Perfil de Actividad Bancaria</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gaugeJS@1.3.7/dist/gauge.min.js"></script>
   </head>
   <body class="bg-gray-100">
     <div id="dashboard" class="max-w-5xl mx-auto p-4 space-y-6">
@@ -37,19 +38,13 @@
         </div>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4">
-        <div class="bg-white p-4 rounded shadow">
-          <h3 class="text-lg font-semibold mb-4">Métricas de montos</h3>
-          <canvas id="amountMetricsChart" height="200"></canvas>
-        </div>
-        <div>
-          <h3 class="text-lg font-semibold mb-2">Recencia</h3>
-          <canvas
-            id="recencyDumbbell"
-            class="bg-white p-2 rounded w-full"
-            height="200"
-          ></canvas>
-        </div>
+      <div>
+        <h3 class="text-lg font-semibold mb-2">Recencia</h3>
+        <canvas
+          id="recencyBullet"
+          class="bg-white p-2 rounded w-full"
+          height="200"
+        ></canvas>
       </div>
 
       <div class="grid md:grid-cols-2 gap-4">
@@ -59,7 +54,7 @@
         </div>
         <div>
           <h3 class="text-lg font-semibold mb-2">Tasa de alternancia</h3>
-          <canvas id="alternationGauge" class="bg-white p-4 rounded" height="80"></canvas>
+          <canvas id="alternationGauge" class="bg-white p-4 rounded" width="200" height="100"></canvas>
         </div>
       </div>
 
@@ -307,105 +302,148 @@
         return sign + parts.join(' ');
       }
 
-      // Simplified recency widget using raw canvas drawing to avoid Chart.js leaks
-      function renderRecencyDumbbell(canvasId, f, { title = "Recencia (P05–P95 con marcadores)" } = {}) {
+      // Recency chart rendered similarly to robust bullet using Chart.js
+      function renderRecencyBullet(canvasId, f, { title = "Recencia • P05–P95 con Mediana/Media" } = {}) {
         const r = (f && f.recency) || {};
-        const p05  = toNum(r.p05_delta_s);
-        const p95  = toNum(r.p95_delta_s);
-        const med  = toNum(r.median_delta_s);
+        const p05 = toNum(r.p05_delta_s);
+        const p95 = toNum(r.p95_delta_s);
+        const med = toNum(r.median_delta_s);
         const mean = toNum(r.mean_delta_s);
-        const values = [p05, p95, med, mean].filter(v => v != null);
-        if (values.length === 0) return;
+        const values = [p05, p95, med, mean].filter((v) => v != null);
+        if (!values.length) return;
 
         const xMin = Math.max(0, Math.min(...values, 0));
         const baseMax = Math.max(...values, 1);
         const xMax = baseMax * 1.1;
 
-        const canvas = document.getElementById(canvasId);
-        if (!canvas) return;
+        const markers = [];
+        if (med != null) markers.push({ x: med, y: 0.5, label: "Mediana" });
+        if (mean != null) markers.push({ x: mean, y: 0.5, label: "Media" });
 
-        const dpr = window.devicePixelRatio || 1;
-        const width = canvas.clientWidth;
-        const height = canvas.clientHeight;
-        canvas.width = width * dpr;
-        canvas.height = height * dpr;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(dpr, dpr);
-
-        ctx.clearRect(0, 0, width, height);
-
-        // Title
-        ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-        ctx.fillStyle = '#111';
-        ctx.textAlign = 'center';
-        ctx.fillText(title, width / 2, 16);
-
-        const chartArea = { left: 40, right: width - 20, top: 30, bottom: height - 30 };
-        const y = (chartArea.top + chartArea.bottom) / 2;
-        const scaleX = (v) => {
-          return chartArea.left + (chartArea.right - chartArea.left) * ((v - xMin) / (xMax - xMin));
+        const recencyPlugin = {
+          id: "recencyBullet",
+          beforeDatasetsDraw(chart) {
+            const {
+              ctx,
+              chartArea,
+              scales: { x },
+            } = chart;
+            const y = chartArea.top + chartArea.height / 2;
+            const drawLine = (val, dash) => {
+              if (!isFinite(val)) return;
+              const xv = x.getPixelForValue(val);
+              ctx.save();
+              ctx.setLineDash(dash);
+              ctx.strokeStyle = "#333";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(xv, chartArea.top);
+              ctx.lineTo(xv, chartArea.bottom);
+              ctx.stroke();
+              ctx.restore();
+            };
+            const xp05 = x.getPixelForValue(p05);
+            const xp95 = x.getPixelForValue(p95);
+            if (isFinite(xp05) && isFinite(xp95)) {
+              ctx.save();
+              ctx.strokeStyle = "#999";
+              ctx.lineWidth = 6;
+              ctx.beginPath();
+              ctx.moveTo(Math.min(xp05, xp95), y);
+              ctx.lineTo(Math.max(xp05, xp95), y);
+              ctx.stroke();
+              ctx.fillStyle = "#999";
+              ctx.beginPath();
+              ctx.arc(xp05, y, 5, 0, Math.PI * 2);
+              ctx.arc(xp95, y, 5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            }
+            drawLine(med, [6, 3]);
+            drawLine(mean, [2, 2]);
+          },
+          afterDatasetsDraw(chart) {
+            const {
+              ctx,
+              chartArea,
+              scales: { x },
+            } = chart;
+            const drawLabel = (val, text) => {
+              if (!isFinite(val)) return;
+              const xp = x.getPixelForValue(val);
+              ctx.save();
+              ctx.font = "10px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+              ctx.fillStyle = "#111";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "bottom";
+              ctx.fillText(text, xp, chartArea.top + 4);
+              ctx.restore();
+            };
+            drawLabel(med, "Mediana");
+            drawLabel(mean, "Media");
+          },
         };
 
-        // Baseline between P05 and P95
-        const xp05 = Number.isFinite(p05) ? scaleX(p05) : null;
-        const xp95 = Number.isFinite(p95) ? scaleX(p95) : null;
-        if (xp05 != null && xp95 != null) {
-          ctx.strokeStyle = '#999';
-          ctx.lineWidth = 6;
-          ctx.beginPath();
-          ctx.moveTo(Math.min(xp05, xp95), y);
-          ctx.lineTo(Math.max(xp05, xp95), y);
-          ctx.stroke();
-          ctx.fillStyle = '#999';
-          ctx.beginPath();
-          ctx.arc(xp05, y, 5, 0, Math.PI * 2);
-          ctx.arc(xp95, y, 5, 0, Math.PI * 2);
-          ctx.fill();
+        const ctx = document.getElementById(canvasId).getContext("2d");
+        if (ctx._chartInstance) {
+          ctx._chartInstance.destroy();
         }
 
-        const drawMarker = (val, dash, label) => {
-          if (!Number.isFinite(val)) return;
-          const xv = scaleX(val);
-          ctx.save();
-          ctx.setLineDash(dash);
-          ctx.strokeStyle = '#333';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(xv, chartArea.top);
-          ctx.lineTo(xv, chartArea.bottom);
-          ctx.stroke();
-          ctx.restore();
-          ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-          ctx.fillStyle = '#111';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(label, xv, chartArea.top - 2);
-        };
-
-        drawMarker(med, [6, 3], 'Mediana');
-        drawMarker(mean, [2, 2], 'Media');
-
-        // X axis
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(chartArea.left, chartArea.bottom);
-        ctx.lineTo(chartArea.right, chartArea.bottom);
-        ctx.stroke();
-
-        const tickCount = 4;
-        for (let i = 0; i <= tickCount; i++) {
-          const val = xMin + (xMax - xMin) * (i / tickCount);
-          const xv = scaleX(val);
-          ctx.beginPath();
-          ctx.moveTo(xv, chartArea.bottom);
-          ctx.lineTo(xv, chartArea.bottom + 5);
-          ctx.stroke();
-          ctx.font = '10px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-          ctx.textBaseline = 'top';
-          ctx.textAlign = 'center';
-          ctx.fillText(fmtDuration(val), xv, chartArea.bottom + 7);
-        }
+        const chart = new Chart(ctx, {
+          type: "scatter",
+          data: {
+            datasets: [
+              {
+                label: "Marcadores",
+                data: markers,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                showLine: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label(ctx) {
+                    const raw = ctx.raw || {};
+                    const name = raw.label || "Valor";
+                    const val = ctx.parsed?.x;
+                    return `${name}: ${fmtDuration(val)}`;
+                  },
+                  title() {
+                    return "";
+                  },
+                },
+              },
+              title: { display: true, text: title },
+            },
+            scales: {
+              x: {
+                type: "linear",
+                suggestedMin: xMin,
+                suggestedMax: xMax,
+                ticks: {
+                  callback: (v) => fmtDuration(v),
+                },
+                grid: { drawOnChartArea: true },
+              },
+              y: {
+                type: "linear",
+                min: 0,
+                max: 1,
+                display: false,
+                grid: { display: false },
+              },
+            },
+          },
+          plugins: [recencyPlugin],
+        });
+        ctx._chartInstance = chart;
       }
 
       const LABELS = {
@@ -552,48 +590,30 @@
         h1.insertAdjacentElement("afterend", p);
       }
 
-      if (data.totals) {
-        addTopCard(
-          "topCards",
-          "Operaciones",
-          data.totals.n_trx,
-          ICONS.operaciones,
-          "text-blue-500",
-        );
-        addTopCard(
-          "topCards",
-          "Ingresos",
-          data.totals.sum_in,
-          ICONS.ingresos,
-          "text-green-500",
-        );
-        addTopCard(
-          "topCards",
-          "Egresos",
-          data.totals.sum_out,
-          ICONS.egresos,
-          "text-red-500",
-        );
-        addTopCard("topCards", "Neto", data.totals.net, ICONS.neto, "text-gray-500");
-
-        const metrics = ["median_abs", "mad_abs", "max_abs", "p95_abs", "p99_abs"];
-        const labels = metrics.map((m) => LABELS.totals[m]);
-        const values = metrics.map((m) => data.totals[m]);
-        const ctx = document.getElementById("amountMetricsChart");
-        new Chart(ctx, {
-          type: "bar",
-          data: {
-            labels,
-            datasets: [
-              {
-                data: values,
-                backgroundColor: "#3b82f6",
-              },
-            ],
-          },
-          options: { scales: { y: { beginAtZero: true } } },
-        });
-      }
+        if (data.totals) {
+          addTopCard(
+            "topCards",
+            "Operaciones",
+            data.totals.n_trx,
+            ICONS.operaciones,
+            "text-blue-500",
+          );
+          addTopCard(
+            "topCards",
+            "Ingresos",
+            data.totals.sum_in,
+            ICONS.ingresos,
+            "text-green-500",
+          );
+          addTopCard(
+            "topCards",
+            "Egresos",
+            data.totals.sum_out,
+            ICONS.egresos,
+            "text-red-500",
+          );
+          addTopCard("topCards", "Neto", data.totals.net, ICONS.neto, "text-gray-500");
+        }
 
       if (data.robust_stats) {
         renderRobustBullet("robustBullet", data, { currency: "ARS" });
@@ -675,7 +695,7 @@
         delete data.recency.delta_hist;
       }
       if (data.recency) {
-        renderRecencyDumbbell('recencyDumbbell', data, {
+        renderRecencyBullet('recencyBullet', data, {
           title: 'Recencia • P05–P95 con Mediana/Media'
         });
       }
@@ -710,45 +730,32 @@
           },
         });
 
-        new Chart(document.getElementById("alternationGauge"), {
-          type: "bar",
-          data: {
-            labels: [""],
-            datasets: [
-              {
-                data: [0.33],
-                backgroundColor: "#10b981",
-                stack: "g",
-              },
-              {
-                data: [0.33],
-                backgroundColor: "#f59e0b",
-                stack: "g",
-              },
-              {
-                data: [0.34],
-                backgroundColor: "#ef4444",
-                stack: "g",
-              },
-              {
-                data: [s.alternation_rate],
-                type: "scatter",
-                backgroundColor: "#111827",
-                pointRadius: 6,
-                stack: "marker",
-              },
+          const gaugeCanvas = document.getElementById("alternationGauge");
+          const gaugeOpts = {
+            angle: 0,
+            lineWidth: 0.2,
+            radiusScale: 1,
+            pointer: { length: 0.6, strokeWidth: 0.035, color: "#111827" },
+            limitMax: true,
+            limitMin: true,
+            strokeColor: "#E5E7EB",
+            staticZones: [
+              { strokeStyle: "#10b981", min: 0, max: 0.33 },
+              { strokeStyle: "#f59e0b", min: 0.33, max: 0.66 },
+              { strokeStyle: "#ef4444", min: 0.66, max: 1 },
             ],
-          },
-          options: {
-            indexAxis: "y",
-            scales: {
-              x: { min: 0, max: 1, stacked: true },
-              y: { display: false, stacked: true },
+            staticLabels: {
+              font: "10px sans-serif",
+              labels: [0, 0.5, 1],
+              fractionDigits: 2,
             },
-            plugins: { legend: { display: false }, tooltip: { enabled: false } },
-          },
-        });
-      }
+          };
+          const gauge = new Gauge(gaugeCanvas).setOptions(gaugeOpts);
+          gauge.maxValue = 1;
+          gauge.setMinValue(0);
+          gauge.animationSpeed = 32;
+          gauge.set(s.alternation_rate || 0);
+        }
 
         if (data.temporal) {
         const temporalData = { ...data.temporal };
