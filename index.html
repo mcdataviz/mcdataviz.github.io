@@ -299,13 +299,19 @@
       }
 
       // Recency chart rendered similarly to robust bullet using Chart.js
-      function renderRecencyBullet(divId, f, { title = "Recencia • P05–P95 con Mediana/Media" } = {}) {
+      function renderRecencyBullet(
+        divId,
+        f,
+        { title = "Recencia • Min–Max y P05–P95 con Mediana/Media" } = {},
+      ) {
         const r = (f && f.recency) || {};
         const p05 = toNum(r.p05_delta_s);
         const p95 = toNum(r.p95_delta_s);
         const med = toNum(r.median_delta_s);
         const mean = toNum(r.mean_delta_s);
-        const values = [p05, p95, med, mean].filter((v) => v != null);
+        const min = toNum(r.min_delta_s);
+        const max = toNum(r.max_delta_s);
+        const values = [p05, p95, med, mean, min, max].filter((v) => v != null);
         if (!values.length) return;
 
         const xMin = Math.max(0, Math.min(...values, 0));
@@ -316,8 +322,20 @@
         const tickVals = Array.from({ length: 5 }, (_, i) => xMin + i * step);
         const tickText = tickVals.map((v) => fmtDuration(v));
 
-        const data = [
-          {
+        const data = [];
+        if (min != null && max != null) {
+          data.push({
+            x: [min, max],
+            y: [0, 0],
+            mode: "lines+markers",
+            line: { color: "#ccc", width: 8 },
+            marker: { color: "#ccc", size: 12 },
+            hoverinfo: "skip",
+            showlegend: false,
+          });
+        }
+        if (p05 != null && p95 != null) {
+          data.push({
             x: [p05, p95],
             y: [0, 0],
             mode: "lines+markers",
@@ -325,12 +343,64 @@
             marker: { color: "#999", size: 12 },
             hoverinfo: "skip",
             showlegend: false,
-          },
-        ];
+          });
+        }
 
         const shapes = [];
         const annotations = [];
 
+        if (min != null) {
+          shapes.push({
+            type: "line",
+            x0: min,
+            x1: min,
+            y0: -0.2,
+            y1: 0.2,
+            line: { color: "#555", width: 2 },
+          });
+          annotations.push({
+            x: min,
+            y: -0.25,
+            text: "Min",
+            showarrow: false,
+            yanchor: "top",
+            font: { size: 10 },
+          });
+          data.push({
+            x: [min],
+            y: [0],
+            mode: "markers",
+            marker: { size: 1, color: "rgba(0,0,0,0)" },
+            hovertemplate: `Min: ${fmtDuration(min)}<extra></extra>`,
+            showlegend: false,
+          });
+        }
+        if (max != null) {
+          shapes.push({
+            type: "line",
+            x0: max,
+            x1: max,
+            y0: -0.2,
+            y1: 0.2,
+            line: { color: "#555", width: 2 },
+          });
+          annotations.push({
+            x: max,
+            y: -0.25,
+            text: "Max",
+            showarrow: false,
+            yanchor: "top",
+            font: { size: 10 },
+          });
+          data.push({
+            x: [max],
+            y: [0],
+            mode: "markers",
+            marker: { size: 1, color: "rgba(0,0,0,0)" },
+            hovertemplate: `Max: ${fmtDuration(max)}<extra></extra>`,
+            showlegend: false,
+          });
+        }
         if (med != null) {
           shapes.push({
             type: "line",
@@ -655,11 +725,11 @@
       if (data.recency && data.recency.delta_hist) {
         delete data.recency.delta_hist;
       }
-      if (data.recency) {
-        renderRecencyBullet('recencyBullet', data, {
-          title: 'Recencia • P05–P95 con Mediana/Media'
-        });
-      }
+        if (data.recency) {
+          renderRecencyBullet('recencyBullet', data, {
+            title: 'Recencia • Min–Max y P05–P95 con Mediana/Media'
+          });
+        }
 
       if (data.streaks) {
         const s = data.streaks;
