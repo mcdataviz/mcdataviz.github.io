@@ -13,6 +13,13 @@
 
       <div id="topCards" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
 
+      <div class="bg-white p-4 rounded shadow">
+        <h3 class="text-lg font-semibold mb-4">Escala robusta</h3>
+        <div class="h-24">
+          <canvas id="robustBullet"></canvas>
+        </div>
+      </div>
+
       <div class="grid md:grid-cols-2 gap-4">
         <div>
           <h3 class="text-lg font-semibold mb-2">Histograma horario</h3>
@@ -20,28 +27,12 @@
         </div>
         <div class="space-y-4">
           <div>
-            <h3 class="text-lg font-semibold mb-2">Mediana por segmento</h3>
-            <canvas
-              id="medianSegmentChart"
-              class="bg-white p-2 rounded"
-              height="200"
-            ></canvas>
+            <h3 class="text-lg font-semibold mb-2">Ráfagas por ventana</h3>
+            <canvas id="velocityBurstChart" class="bg-white p-2 rounded" height="200"></canvas>
           </div>
           <div>
-            <h3 class="text-lg font-semibold mb-2">MAD por segmento</h3>
-            <canvas
-              id="madSegmentChart"
-              class="bg-white p-2 rounded"
-              height="200"
-            ></canvas>
-          </div>
-          <div>
-            <h3 class="text-lg font-semibold mb-2">% Outliers (Z≥3.5) por segmento</h3>
-            <canvas
-              id="outlierSegmentChart"
-              class="bg-white p-2 rounded"
-              height="200"
-            ></canvas>
+            <h3 class="text-lg font-semibold mb-2">Frecuencia por tipo</h3>
+            <canvas id="typeFreqDonut" class="bg-white p-2 rounded" height="200"></canvas>
           </div>
         </div>
       </div>
@@ -55,15 +46,20 @@
           <h3 class="text-lg font-semibold mb-2">Recencia</h3>
           <canvas
             id="recencyDumbbell"
-            class="bg-white p-2 rounded"
+            class="bg-white p-2 rounded w-full"
             height="200"
           ></canvas>
         </div>
-        <div class="bg-white p-4 rounded shadow md:col-span-2">
-          <h3 class="text-lg font-semibold mb-4">Escala robusta</h3>
-          <div class="h-24">
-            <canvas id="robustBullet"></canvas>
-          </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Rachas 30m OUT vs IN</h3>
+          <canvas id="streaksDivergent" class="bg-white p-2 rounded" height="200"></canvas>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Tasa de alternancia</h3>
+          <canvas id="alternationGauge" class="bg-white p-4 rounded" height="80"></canvas>
         </div>
       </div>
 
@@ -626,46 +622,54 @@
         });
       }
 
-        if (data.robust_segment) {
-          const segs = data.robust_segment.segments;
-          const buildChart = (id, label, values, color, transform) => {
-            const ctx = document.getElementById(id);
-            const vals = transform ? values.map(transform) : values;
-            new Chart(ctx, {
-              type: "bar",
-              data: {
-                labels: segs,
-                datasets: [
-                  {
-                    label,
-                    data: vals,
-                    backgroundColor: color,
-                  },
+      if (data.velocity) {
+        const v = data.velocity;
+        const vLabels = ["5m", "30m", "60m", "24h"];
+        const vValues = [
+          v.max_cnt_5m,
+          v.max_cnt_30m,
+          v.max_cnt_60m,
+          v.max_cnt_24h,
+        ];
+        new Chart(document.getElementById("velocityBurstChart"), {
+          type: "bar",
+          data: {
+            labels: vLabels,
+            datasets: [
+              {
+                label: "Ráfagas",
+                data: vValues,
+                backgroundColor: "#f59e0b",
+              },
+            ],
+          },
+          options: { scales: { y: { beginAtZero: true } } },
+        });
+      }
+
+      if (data.type_freq) {
+        const tfLabels = Object.keys(data.type_freq);
+        const tfValues = tfLabels.map((k) => data.type_freq[k]);
+        new Chart(document.getElementById("typeFreqDonut"), {
+          type: "doughnut",
+          data: {
+            labels: tfLabels,
+            datasets: [
+              {
+                data: tfValues,
+                backgroundColor: [
+                  "#3b82f6",
+                  "#10b981",
+                  "#f59e0b",
+                  "#ef4444",
+                  "#6366f1",
                 ],
               },
-              options: { scales: { y: { beginAtZero: true } } },
-            });
-          };
-          buildChart(
-            "medianSegmentChart",
-            LABELS.totals.median_abs,
-            data.robust_segment.median_abs,
-            "#3b82f6",
-          );
-          buildChart(
-            "madSegmentChart",
-            LABELS.totals.mad_abs,
-            data.robust_segment.mad_abs,
-            "#10b981",
-          );
-          buildChart(
-            "outlierSegmentChart",
-            LABELS.totals["frac_outlier_z>=3.5"],
-            data.robust_segment["frac_outlier_z>=3.5"],
-            "#ef4444",
-            (v) => v * 100,
-          );
-        }
+            ],
+          },
+          options: { plugins: { legend: { position: "bottom" } } },
+        });
+      }
 
       if (data.recency && data.recency.delta_hist) {
         delete data.recency.delta_hist;
@@ -673,6 +677,76 @@
       if (data.recency) {
         renderRecencyDumbbell('recencyDumbbell', data, {
           title: 'Recencia • P05–P95 con Mediana/Media'
+        });
+      }
+
+      if (data.streaks) {
+        const s = data.streaks;
+        const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
+        new Chart(document.getElementById("streaksDivergent"), {
+          type: "bar",
+          data: {
+            labels: [""],
+            datasets: [
+              {
+                label: "OUT",
+                data: [-(s.max_out_30m || 0)],
+                backgroundColor: "#ef4444",
+              },
+              {
+                label: "IN",
+                data: [s.max_in_30m || 0],
+                backgroundColor: "#10b981",
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y",
+            scales: {
+              x: { min: -maxVal, max: maxVal, ticks: { precision: 0 } },
+              y: { stacked: true, display: false },
+            },
+            plugins: { legend: { display: false } },
+          },
+        });
+
+        new Chart(document.getElementById("alternationGauge"), {
+          type: "bar",
+          data: {
+            labels: [""],
+            datasets: [
+              {
+                data: [0.33],
+                backgroundColor: "#10b981",
+                stack: "g",
+              },
+              {
+                data: [0.33],
+                backgroundColor: "#f59e0b",
+                stack: "g",
+              },
+              {
+                data: [0.34],
+                backgroundColor: "#ef4444",
+                stack: "g",
+              },
+              {
+                data: [s.alternation_rate],
+                type: "scatter",
+                backgroundColor: "#111827",
+                pointRadius: 6,
+                stack: "marker",
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y",
+            scales: {
+              x: { min: 0, max: 1, stacked: true },
+              y: { display: false, stacked: true },
+            },
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          },
         });
       }
 
