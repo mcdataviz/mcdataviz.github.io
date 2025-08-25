@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Perfil de Actividad Bancaria</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="container my-4" id="dashboard">
+    <h1 class="mb-4">Perfil de actividad</h1>
+
+    <!-- Totals and flow chart -->
+    <div class="row" id="totalsCards"></div>
+    <div class="my-4">
+        <canvas id="flowChart" height="120"></canvas>
+    </div>
+
+    <!-- Heatmap for hourly distribution -->
+    <div class="my-4">
+        <h3>Distribución horaria (Heatmap)</h3>
+        <div id="hourHeatmap" class="d-flex flex-wrap" style="width:480px"></div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h3>Histograma horario</h3>
+            <canvas id="hourChart" height="200"></canvas>
+        </div>
+        <div class="col-md-6">
+            <h3>% Outliers (Z≥3.5)</h3>
+            <canvas id="outlierGauge" height="200"></canvas>
+        </div>
+    </div>
+
+    <!-- Other metric groups -->
+    <div class="row" id="otherCards"></div>
+</div>
+
+<script>
+// Parse JSON from query param 'p'
+let data = {};
+try {
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get('p');
+    if (p) {
+        data = JSON.parse(decodeURIComponent(p));
+    }
+} catch (e) {
+    console.error('Error parsing data', e);
+}
+
+function formatNumber(num) {
+    return typeof num === 'number' ? num.toLocaleString('es-AR', {maximumFractionDigits: 2}) : num;
+}
+
+function addCard(containerId, title, obj) {
+    const entries = Object.entries(obj || {});
+    if (!entries.length) return;
+    const container = document.getElementById(containerId);
+    const card = document.createElement('div');
+    card.className = 'col-md-4 mb-3';
+    let html = `<div class="card h-100"><div class="card-body"><h5 class="card-title">${title}</h5>`;
+    html += entries.map(([k, v]) => `<p class='card-text'><strong>${k}:</strong> ${formatNumber(v)}</p>`).join('');
+    html += '</div></div>';
+    card.innerHTML = html;
+    container.appendChild(card);
+}
+
+if (data.totals) {
+    addCard('totalsCards', 'Totales', {
+        'Operaciones': data.totals.n_trx,
+        'Ingresos': data.totals.sum_in,
+        'Egresos': data.totals.sum_out,
+        'Neto': data.totals.net
+    });
+
+    const ctx = document.getElementById('flowChart');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Ingresos', 'Egresos', 'Neto'],
+            datasets: [{
+                data: [data.totals.sum_in, data.totals.sum_out, data.totals.net],
+                backgroundColor: ['#198754', '#dc3545', '#6c757d']
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: 'Flujo' }
+            },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+}
+
+if (data.temporal && data.temporal.hour_hist) {
+    const hist = data.temporal.hour_hist;
+    const max = Math.max(...Object.values(hist));
+    const heatmap = document.getElementById('hourHeatmap');
+    for (let h = 0; h < 24; h++) {
+        const val = hist[h] || 0;
+        const intensity = max ? val / max : 0;
+        const div = document.createElement('div');
+        div.style.width = '40px';
+        div.style.height = '40px';
+        div.style.lineHeight = '40px';
+        div.style.textAlign = 'center';
+        div.style.border = '1px solid #dee2e6';
+        div.style.backgroundColor = `rgba(13,110,253,${intensity})`;
+        div.innerText = h;
+        heatmap.appendChild(div);
+    }
+
+    const hours = Object.keys(hist).map(h => parseInt(h)).sort((a,b)=>a-b);
+    const counts = hours.map(h => hist[h]);
+    const hourCtx = document.getElementById('hourChart');
+    new Chart(hourCtx, {
+        type: 'bar',
+        data: {
+            labels: hours,
+            datasets: [{
+                label: 'Operaciones',
+                data: counts,
+                backgroundColor: '#0d6efd'
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+}
+
+if (data.totals && data.totals['frac_outlier_z>=3.5'] != null) {
+    const val = data.totals['frac_outlier_z>=3.5'] * 100;
+    const gaugeCtx = document.getElementById('outlierGauge');
+    new Chart(gaugeCtx, {
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [val, 100 - val],
+                backgroundColor: ['#dc3545', '#e9ecef'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            rotation: -Math.PI,
+            circumference: Math.PI,
+            cutout: '70%',
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false },
+                title: { display: true, text: val.toFixed(1) + '%'}
+            }
+        }
+    });
+}
+
+// Other groups
+addCard('otherCards', 'Velocidad', data.velocity || {});
+addCard('otherCards', 'Recency', data.recency || {});
+addCard('otherCards', 'Novedad', data.novelty || {});
+addCard('otherCards', 'Roundness', data.roundness || {});
+addCard('otherCards', 'Streaks', data.streaks || {});
+addCard('otherCards', 'Flow', data.flow || {});
+addCard('otherCards', 'Coherence', data.coherence || {});
+addCard('otherCards', 'Status', data.status || {});
+addCard('otherCards', 'Duplicates', data.duplicates || {});
+</script>
+</body>
+</html>
