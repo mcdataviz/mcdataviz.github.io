@@ -56,6 +56,28 @@
         </div>
       </div>
 
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Por dirección: Operaciones</h3>
+          <canvas id="byDirCount" class="bg-white p-2 rounded" height="200"></canvas>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Por dirección: Montos (Mediana, P95, P99)</h3>
+          <canvas id="byDirAmounts" class="bg-white p-2 rounded" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Por tipo: Operaciones</h3>
+          <canvas id="byTypeCount" class="bg-white p-2 rounded" height="240"></canvas>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Por tipo: Mediana de monto</h3>
+          <canvas id="byTypeMedian" class="bg-white p-2 rounded" height="240"></canvas>
+        </div>
+      </div>
+
     <div id="otherCards" class="grid md:grid-cols-3 gap-4"></div>
     </div>
     <footer class="max-w-5xl mx-auto p-4">
@@ -771,6 +793,99 @@
             ],
           },
           options: { plugins: { legend: { position: "bottom" } } },
+        });
+      }
+
+      // by_direction visualizations
+      if (data.by_direction && typeof data.by_direction === 'object') {
+        const dirLabels = Object.keys(data.by_direction);
+        const get = (o, k, d = 0) => {
+          const v = o?.[k];
+          return Number.isFinite(+v) ? +v : d;
+        };
+
+        // Counts per direction
+        const dirCounts = dirLabels.map((k) => get(data.by_direction[k], 'n_trx', 0));
+        new Chart(document.getElementById('byDirCount'), {
+          type: 'bar',
+          data: {
+            labels: dirLabels,
+            datasets: [
+              {
+                label: 'Operaciones',
+                data: dirCounts,
+                backgroundColor: ['#10b981', '#ef4444', '#3b82f6', '#f59e0b'],
+              },
+            ],
+          },
+          options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } },
+        });
+
+        // Amount scale per direction: median, p95, p99
+        const med = dirLabels.map((k) => get(data.by_direction[k], 'median_abs', 0));
+        const p95 = dirLabels.map((k) => get(data.by_direction[k], 'p95_abs', 0));
+        const p99 = dirLabels.map((k) => get(data.by_direction[k], 'p99_abs', 0));
+        const fmtARS = (v) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
+        new Chart(document.getElementById('byDirAmounts'), {
+          type: 'bar',
+          data: {
+            labels: dirLabels,
+            datasets: [
+              { label: 'Mediana', data: med, backgroundColor: '#60a5fa' },
+              { label: 'P95', data: p95, backgroundColor: '#f59e0b' },
+              { label: 'P99', data: p99, backgroundColor: '#ef4444' },
+            ],
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom' } },
+            scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtARS(v) } } },
+          },
+        });
+      }
+
+      // by_type visualizations
+      if (data.by_type && typeof data.by_type === 'object') {
+        const entries = Object.entries(data.by_type);
+        const toNum = (v) => (Number.isFinite(+v) ? +v : 0);
+
+        // Sort by n_trx desc for counts chart
+        const byCount = [...entries].sort((a, b) => toNum(b[1]?.n_trx) - toNum(a[1]?.n_trx));
+        const typeLabelsCount = byCount.map(([k]) => k);
+        const typeCounts = byCount.map(([, v]) => toNum(v?.n_trx));
+        new Chart(document.getElementById('byTypeCount'), {
+          type: 'bar',
+          data: {
+            labels: typeLabelsCount,
+            datasets: [
+              { label: 'Operaciones', data: typeCounts, backgroundColor: '#6366f1' },
+            ],
+          },
+          options: {
+            indexAxis: 'y',
+            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+            plugins: { legend: { display: false } },
+          },
+        });
+
+        // Sort by median_abs desc for amounts chart
+        const byMedian = [...entries].sort((a, b) => toNum(b[1]?.median_abs) - toNum(a[1]?.median_abs));
+        const typeLabelsMed = byMedian.map(([k]) => k);
+        const typeMedians = byMedian.map(([, v]) => toNum(v?.median_abs));
+        const fmtARS = (v) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
+        new Chart(document.getElementById('byTypeMedian'), {
+          type: 'bar',
+          data: {
+            labels: typeLabelsMed,
+            datasets: [
+              { label: 'Mediana de monto', data: typeMedians, backgroundColor: '#10b981' },
+            ],
+          },
+          options: {
+            indexAxis: 'y',
+            scales: { x: { beginAtZero: true, ticks: { callback: (v) => fmtARS(v) } } },
+            plugins: { legend: { display: false } },
+          },
         });
       }
 
