@@ -15,11 +15,7 @@
 
       <div class="md:grid md:grid-cols-5 gap-4">
         <aside id="sidebar" class="md:col-span-1 mb-4 md:mb-0">
-          <nav class="bg-white rounded shadow overflow-hidden">
-            <button data-section="general" class="w-full text-left px-4 py-2 hover:bg-gray-100">General</button>
-            <button data-section="by-direction" class="w-full text-left px-4 py-2 hover:bg-gray-100">Por dirección</button>
-            <button data-section="by-type" class="w-full text-left px-4 py-2 hover:bg-gray-100">Por tipo</button>
-          </nav>
+          <nav id="sidebarNav" class="bg-white rounded shadow overflow-hidden"></nav>
         </aside>
         <div id="content" class="md:col-span-4 space-y-6">
 
@@ -115,6 +111,12 @@
       } catch (e) {
         console.error("Error parsing data", e);
       }
+
+      // Estructura de sets: { sets: { global, by_direction, by_type } }
+      const sets = (data && data.sets) || null;
+      const general = (sets && sets.global) || {};
+      const byDir = (sets && sets.by_direction) || {};
+      const byType = (sets && sets.by_type) || {};
 
       function syntaxHighlight(json) {
         if (typeof json !== "string") {
@@ -699,45 +701,45 @@
         container.appendChild(card);
       }
 
-      if (data.tier != null) {
+      if (general.tier != null) {
         const dashboard = document.getElementById("dashboard");
         const h1 = dashboard.querySelector("h1");
         const p = document.createElement("p");
-        p.innerHTML = `<strong>${LABELS.tier}:</strong> ${formatNumber(data.tier)}`;
+        p.innerHTML = `<strong>${LABELS.tier}:</strong> ${formatNumber(general.tier)}`;
         h1.insertAdjacentElement("afterend", p);
       }
 
-        if (data.totals) {
+        if (general.totals) {
           addTopCard(
             "topCards",
             "Operaciones",
-            data.totals.n_trx,
+            general.totals.n_trx,
             ICONS.operaciones,
             "text-blue-500",
           );
           addTopCard(
             "topCards",
             "Ingresos",
-            data.totals.sum_in,
+            general.totals.sum_in,
             ICONS.ingresos,
             "text-green-500",
           );
           addTopCard(
             "topCards",
             "Egresos",
-            data.totals.sum_out,
+            general.totals.sum_out,
             ICONS.egresos,
             "text-red-500",
           );
-          addTopCard("topCards", "Neto", data.totals.net, ICONS.neto, "text-gray-500");
+          addTopCard("topCards", "Neto", general.totals.net, ICONS.neto, "text-gray-500");
         }
 
-      if (data.robust_stats) {
-        renderRobustBullet("robustBullet", data, { currency: "ARS" });
+      if (general.robust_stats) {
+        renderRobustBullet("robustBullet", general, { currency: "ARS" });
       }
 
-      if (data.temporal && data.temporal.hour_hist) {
-        const hist = data.temporal.hour_hist;
+      if (general.temporal && general.temporal.hour_hist) {
+        const hist = general.temporal.hour_hist;
         const hours = Object.keys(hist)
           .map((h) => parseInt(h))
           .sort((a, b) => a - b);
@@ -759,8 +761,8 @@
         });
       }
 
-      if (data.velocity) {
-        const v = data.velocity;
+      if (general.velocity) {
+        const v = general.velocity;
         const vLabels = ["5m", "30m", "60m", "24h"];
         const vValues = [
           v.max_cnt_5m,
@@ -784,9 +786,9 @@
         });
       }
 
-      if (data.type_freq) {
-        const tfLabels = Object.keys(data.type_freq);
-        const tfValues = tfLabels.map((k) => data.type_freq[k]);
+      if (general.type_freq) {
+        const tfLabels = Object.keys(general.type_freq);
+        const tfValues = tfLabels.map((k) => general.type_freq[k]);
         new Chart(document.getElementById("typeFreqDonut"), {
           type: "doughnut",
           data: {
@@ -809,15 +811,15 @@
       }
 
       // by_direction visualizations
-      if (data.by_direction && typeof data.by_direction === 'object') {
-        const dirLabels = Object.keys(data.by_direction);
+      if (byDir && typeof byDir === 'object' && Object.keys(byDir).length) {
+        const dirLabels = Object.keys(byDir);
         const get = (o, k, d = 0) => {
           const v = o?.[k];
           return Number.isFinite(+v) ? +v : d;
         };
 
         // Counts per direction
-        const dirCounts = dirLabels.map((k) => get(data.by_direction[k], 'n_trx', 0));
+        const dirCounts = dirLabels.map((k) => get(byDir[k], 'n_trx', 0));
         new Chart(document.getElementById('byDirCount'), {
           type: 'bar',
           data: {
@@ -834,9 +836,9 @@
         });
 
         // Amount scale per direction: median, p95, p99
-        const med = dirLabels.map((k) => get(data.by_direction[k], 'median_abs', 0));
-        const p95 = dirLabels.map((k) => get(data.by_direction[k], 'p95_abs', 0));
-        const p99 = dirLabels.map((k) => get(data.by_direction[k], 'p99_abs', 0));
+        const med = dirLabels.map((k) => get(byDir[k], 'median_abs', 0));
+        const p95 = dirLabels.map((k) => get(byDir[k], 'p95_abs', 0));
+        const p99 = dirLabels.map((k) => get(byDir[k], 'p99_abs', 0));
         const fmtARS = (v) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
         new Chart(document.getElementById('byDirAmounts'), {
           type: 'bar',
@@ -857,8 +859,8 @@
       }
 
       // by_type visualizations
-      if (data.by_type && typeof data.by_type === 'object') {
-        const entries = Object.entries(data.by_type);
+      if (byType && typeof byType === 'object' && Object.keys(byType).length) {
+        const entries = Object.entries(byType);
         const toNum = (v) => (Number.isFinite(+v) ? +v : 0);
 
         // Sort by n_trx desc for counts chart
@@ -901,17 +903,17 @@
         });
       }
 
-      if (data.recency && data.recency.delta_hist) {
-        delete data.recency.delta_hist;
+      if (general.recency && general.recency.delta_hist) {
+        delete general.recency.delta_hist;
       }
-        if (data.recency) {
-          renderRecencyBullet('recencyBullet', data, {
+        if (general.recency) {
+          renderRecencyBullet('recencyBullet', general, {
             title: 'Recencia • Min–Max y P05–P95 con Mediana/Media'
           });
         }
 
-      if (data.streaks) {
-        const s = data.streaks;
+      if (general.streaks) {
+        const s = general.streaks;
         const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
         new Chart(document.getElementById("streaksDivergent"), {
           type: "bar",
@@ -967,25 +969,25 @@
           gauge.set(s.alternation_rate || 0);
         }
 
-        if (data.temporal) {
-        const temporalData = { ...data.temporal };
+        if (general.temporal) {
+        const temporalData = { ...general.temporal };
         delete temporalData.hour_hist;
         addCard("otherCards", "Temporal", temporalData, LABELS.temporal);
       }
 
-      if (data.robust_stats)
+      if (general.robust_stats)
         addCard(
           "otherCards",
           "Estadísticas robustas",
-          data.robust_stats,
+          general.robust_stats,
           LABELS.robust_stats,
         );
       //if (data.velocity)
       //  addCard("otherCards", "Velocidad", data.velocity, LABELS.velocity);
-      if (data.recency)
-        addCard("otherCards", "Recencia", data.recency, LABELS.recency);
-      if (data.novelty)
-        addCard("otherCards", "Novedad", data.novelty, LABELS.novelty);
+      if (general.recency)
+        addCard("otherCards", "Recencia", general.recency, LABELS.recency);
+      if (general.novelty)
+        addCard("otherCards", "Novedad", general.novelty, LABELS.novelty);
       //if (data.type_freq)
       //  addCard("otherCards", "Frecuencia por tipo", data.type_freq);
       //if (data.type_group_freq)
@@ -994,19 +996,19 @@
        //   "Frecuencia por grupo de tipo",
        //   data.type_group_freq,
        // );
-      if (data.roundness)
-        addCard("otherCards", "Redondez", data.roundness, LABELS.roundness);
+      if (general.roundness)
+        addCard("otherCards", "Redondez", general.roundness, LABELS.roundness);
       //if (data.streaks)
       //  addCard("otherCards", "Rachas", data.streaks, LABELS.streaks);
-      if (data.location)
-        addCard("otherCards", "Ubicación", data.location, LABELS.location);
-      if (data.flow) addCard("otherCards", "Flujo", data.flow, LABELS.flow);
+      if (general.location)
+        addCard("otherCards", "Ubicación", general.location, LABELS.location);
+      if (general.flow) addCard("otherCards", "Flujo", general.flow, LABELS.flow);
       //if (data.coherence)
       //  addCard("otherCards", "Coherencia", data.coherence, LABELS.coherence);
-      if (data.status)
-        addCard("otherCards", "Estado", data.status, LABELS.status);
-      if (data.duplicates)
-        addCard("otherCards", "Duplicados", data.duplicates, LABELS.duplicates);
+      if (general.status)
+        addCard("otherCards", "Estado", general.status, LABELS.status);
+      if (general.duplicates)
+        addCard("otherCards", "Duplicados", general.duplicates, LABELS.duplicates);
 
       const rawPre = document.getElementById("rawJson");
       if (rawPre) {
@@ -1015,14 +1017,14 @@
 
       // Sidebar section switching
       const SECTION_SELECTORS = {
-        general: '.sec-general',
+        global: '.sec-general',
         'by-direction': '.sec-by-direction',
         'by-type': '.sec-by-type',
       };
       function showSection(key) {
         const all = '.sec-general,.sec-by-direction,.sec-by-type';
         document.querySelectorAll(all).forEach((el) => el.classList.add('hidden'));
-        const sel = SECTION_SELECTORS[key] || SECTION_SELECTORS.general;
+        const sel = SECTION_SELECTORS[key] || SECTION_SELECTORS.global;
         document.querySelectorAll(sel).forEach((el) => el.classList.remove('hidden'));
         // button active state
         document.querySelectorAll('#sidebar [data-section]').forEach((btn) => {
@@ -1032,15 +1034,28 @@
         if (active) active.classList.add('bg-gray-200', 'text-gray-900');
         // resize charts after toggling visibility
         try { window.dispatchEvent(new Event('resize')); } catch (e) {}
-        if (key === 'general' && window.Plotly && document.getElementById('recencyBullet')) {
+        if (key === 'global' && window.Plotly && document.getElementById('recencyBullet')) {
           try { Plotly.Plots.resize('recencyBullet'); } catch (e) {}
         }
       }
       function setupSidebar() {
-        document.querySelectorAll('#sidebar [data-section]').forEach((btn) => {
-          btn.addEventListener('click', () => showSection(btn.dataset.section));
+        const nav = document.getElementById('sidebarNav');
+        const sections = [];
+        if (sets && sets.global) sections.push(['global', 'Global']);
+        if (sets && sets.by_direction && Object.keys(sets.by_direction).length) sections.push(['by-direction', 'Por dirección']);
+        if (sets && sets.by_type && Object.keys(sets.by_type).length) sections.push(['by-type', 'Por tipo']);
+        // Fallback: if no sets found, don't render buttons
+        sections.forEach(([key, label]) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.dataset.section = key;
+          btn.className = 'w-full text-left px-4 py-2 hover:bg-gray-100';
+          btn.textContent = label;
+          btn.addEventListener('click', () => showSection(key));
+          nav.appendChild(btn);
         });
-        showSection('general');
+        const defaultKey = sections.find(([k]) => k === 'global')?.[0] || sections[0]?.[0] || 'global';
+        showSection(defaultKey);
       }
       setupSidebar();
     </script>
