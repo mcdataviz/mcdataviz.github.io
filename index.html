@@ -84,7 +84,7 @@
           </div>
         </div>
 
-        <div id="setHVSection" class="grid md:grid-cols-2 gap-4 mt-2">
+        <div id="setHVSection" class="grid md:grid-cols-3 gap-4 mt-2">
           <div>
             <h3 class="text-lg font-semibold mb-2">Histograma horario (Set)</h3>
             <canvas id="setHourChart" class="bg-white p-2 rounded" height="200"></canvas>
@@ -92,6 +92,10 @@
           <div>
             <h3 class="text-lg font-semibold mb-2">Ráfagas por ventana (Set)</h3>
             <canvas id="setVelocityBurstChart" class="bg-white p-2 rounded" height="200"></canvas>
+          </div>
+          <div>
+            <h3 class="text-lg font-semibold mb-2">% Fin de semana (Set)</h3>
+            <canvas id="setWeekendGauge" class="bg-white p-4 rounded w-full h-48"></canvas>
           </div>
         </div>
 
@@ -896,6 +900,8 @@
       // Streaks generales
       if (general.streaks) {
         const s = general.streaks;
+        if (gStreaksSec) gStreaksSec.classList.remove('hidden');
+        if (gGaugeSec) gGaugeSec.classList.remove('hidden');
         const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
         chartOn("streaksDivergent", {
           type: "bar",
@@ -949,15 +955,9 @@
           gauge.setMinValue(0);
           gauge.animationSpeed = 32;
           gauge.set(s.alternation_rate || 0);
-        if (gStreaksSec) gStreaksSec.classList.remove('hidden');
-        if (gGaugeSec) gGaugeSec.classList.remove('hidden');
         }
 
-        if (general.temporal) {
-        const temporalData = { ...general.temporal };
-        delete temporalData.hour_hist;
-        addCard("otherCards", "Temporal", temporalData, LABELS.temporal);
-      }
+      // Sin tarjeta de Temporal en General (se entiende en los sets)
 
       // Tarjetas generales: solo Novedad y Flujo según lo pedido
       if (general.novelty)
@@ -1019,6 +1019,18 @@
           hasAny = true;
         }
 
+        // Weekend gauge (temporal.weekend_frac)
+        if (s.temporal && typeof s.temporal.weekend_frac === 'number') {
+          const wCanvas = document.getElementById('setWeekendGauge');
+          if (wCanvas) {
+            const wOpts = { angle: 0, lineWidth: 0.2, radiusScale: 1, pointer: { length: 0.6, strokeWidth: 0.035, color: '#111827' }, limitMax: true, limitMin: true, strokeColor: '#E5E7EB', staticZones: [ { strokeStyle: '#ef4444', min: 0, max: 0.25 }, { strokeStyle: '#f59e0b', min: 0.25, max: 0.5 }, { strokeStyle: '#10b981', min: 0.5, max: 1 } ], staticLabels: { font: '10px sans-serif', labels: [0,0.5,1], fractionDigits: 2 } };
+            const wg = new Gauge(wCanvas).setOptions(wOpts);
+            wg.maxValue = 1; wg.setMinValue(0); wg.animationSpeed = 32; wg.set(s.temporal.weekend_frac);
+            const el = document.getElementById('setHVSection'); if (el) el.classList.remove('hidden');
+            hasAny = true;
+          }
+        }
+
         if (s.velocity) {
           const v = s.velocity;
           chartOn('setVelocityBurstChart', {
@@ -1051,6 +1063,7 @@
 
         if (s.streaks) {
           const st = s.streaks;
+          const sec = document.getElementById('setTypeStreaksSection'); if (sec) sec.classList.remove('hidden');
           const maxVal = Math.max(st.max_in_30m || 0, st.max_out_30m || 0);
           chartOn('setStreaksDivergent', {
             type: 'bar',
@@ -1064,20 +1077,16 @@
             const gauge = new Gauge(gaugeCanvas).setOptions(gaugeOpts);
             gauge.maxValue = 1; gauge.setMinValue(0); gauge.animationSpeed = 32; gauge.set(st.alternation_rate || 0);
           }
-          const el = document.getElementById('setTypeStreaksSection'); if (el) el.classList.remove('hidden');
           hasAny = true;
         }
 
         // Other cards
         if (s.temporal) { const tmp = { ...s.temporal }; delete tmp.hour_hist; addCard('setOtherCards','Temporal', tmp, LABELS.temporal); }
         if (s.robust_stats) addCard('setOtherCards','Estadísticas robustas', s.robust_stats, LABELS.robust_stats);
-        if (s.recency) addCard('setOtherCards','Recencia', s.recency, LABELS.recency);
+        // No listamos Recencia (se muestra con bullet). Quitamos Redondez, Estado y Duplicados.
         if (s.novelty) addCard('setOtherCards','Novedad', s.novelty, LABELS.novelty);
-        if (s.roundness) addCard('setOtherCards','Redondez', s.roundness, LABELS.roundness);
         if (s.location) addCard('setOtherCards','Ubicación', s.location, LABELS.location);
         if (s.flow) addCard('setOtherCards','Flujo', s.flow, LABELS.flow);
-        if (s.status) addCard('setOtherCards','Estado', s.status, LABELS.status);
-        if (s.duplicates) addCard('setOtherCards','Duplicados', s.duplicates, LABELS.duplicates);
         const anyCards = (document.getElementById('setTopCards')?.children.length || 0) > 0 || (document.getElementById('setOtherCards')?.children.length || 0) > 0;
         if (!hasAny && !anyCards) {
           if (noDataEl) noDataEl.classList.remove('hidden');
