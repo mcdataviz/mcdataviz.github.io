@@ -141,11 +141,30 @@
         console.error("Error parsing data", e);
       }
 
-      // Estructura de sets: { sets: { global, by_direction, by_type } }
+      // Estructura de sets: { sets: { global, by_direction?, by_type?, by_direction_*, by_type_* } }
       const sets = (data && data.sets) || null;
       const general = (sets && sets.global) || {};
-      const byDir = (sets && sets.by_direction) || {};
-      const byType = (sets && sets.by_type) || {};
+      let byDir = (sets && sets.by_direction) || {};
+      let byType = (sets && sets.by_type) || {};
+      // Compatibilidad con sets planos por prefijo (sin modificar JSON)
+      if (sets && (!byDir || !Object.keys(byDir).length)) {
+        const dir = {};
+        Object.keys(sets).forEach((k) => {
+          if (k.startsWith('by_direction_')) {
+            dir[k.replace('by_direction_', '')] = sets[k];
+          }
+        });
+        if (Object.keys(dir).length) byDir = dir;
+      }
+      if (sets && (!byType || !Object.keys(byType).length)) {
+        const typ = {};
+        Object.keys(sets).forEach((k) => {
+          if (k.startsWith('by_type_')) {
+            typ[k.replace('by_type_', '')] = sets[k];
+          }
+        });
+        if (Object.keys(typ).length) byType = typ;
+      }
 
       function syntaxHighlight(json) {
         if (typeof json !== "string") {
@@ -178,12 +197,13 @@
         f,
         { currency = "ARS", title = null } = {},
       ) {
-        const med = +((f?.robust_stats?.median_abs) ?? 0);
-        const mad = +((f?.robust_stats?.mad_abs) ?? 0);
-        const frac = +((f?.robust_stats?.["frac_outlier_z>=3.5"]) ?? 0);
+        // Acepta tanto estructura anidada como plana dentro del set
+        const med = +((f?.robust_stats?.median_abs) ?? f?.median_abs ?? 0);
+        const mad = +((f?.robust_stats?.mad_abs) ?? f?.mad_abs ?? 0);
+        const frac = +((f?.robust_stats?.["frac_outlier_z>=3.5"]) ?? f?.["frac_outlier_z>=3.5"] ?? 0);
 
-        const p95 = f?.totals?.p95_abs ?? null;
-        const p99 = f?.totals?.p99_abs ?? null;
+        const p95 = (f?.totals?.p95_abs ?? f?.p95_abs ?? null);
+        const p99 = (f?.totals?.p99_abs ?? f?.p99_abs ?? null);
 
         const kOut = 3.5 / 0.6745; // ≈ 5.187
 
@@ -761,6 +781,14 @@
             "text-red-500",
           );
           addTopCard("topCards", "Neto", general.totals.net, ICONS.neto, "text-gray-500");
+        } else if (typeof general.n_trx === 'number') {
+          addTopCard(
+            "topCards",
+            "Operaciones",
+            general.n_trx,
+            ICONS.operaciones,
+            "text-blue-500",
+          );
         }
 
       if (general.robust_stats) {
@@ -1078,9 +1106,9 @@
         nav.appendChild(loadBtn);
 
         const sections = [];
-        if (sets && sets.global) sections.push(['global', 'Global']);
-        if (sets && sets.by_direction && Object.keys(sets.by_direction).length) sections.push(['by-direction', 'Por dirección']);
-        if (sets && sets.by_type && Object.keys(sets.by_type).length) sections.push(['by-type', 'Por tipo']);
+        if (general && Object.keys(general).length) sections.push(['global', 'Global']);
+        if (byDir && Object.keys(byDir).length) sections.push(['by-direction', 'Por dirección']);
+        if (byType && Object.keys(byType).length) sections.push(['by-type', 'Por tipo']);
         // Fallback: if no sets found, don't render buttons
         sections.forEach(([key, label]) => {
           const btn = document.createElement('button');
