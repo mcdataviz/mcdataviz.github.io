@@ -855,6 +855,11 @@
         if (typeof totals.sum_out === 'number') addTopCard('generalTopCards', 'Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
         if (typeof totals.net === 'number') addTopCard('generalTopCards', 'Neto', totals.net, ICONS.neto, 'text-gray-500');
 
+        // Placeholders si no hay datos
+        if (gTop && gTop.children.length === 0) {
+          gTop.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
+        }
+
       // Solo métricas generales especificadas: type_freq, novelty, streaks, flow
       if (general.type_freq) {
         const tfLabels = Object.keys(general.type_freq);
@@ -951,6 +956,9 @@
         addCard("generalOtherCards", "Novedad", general.novelty, LABELS.novelty);
       if (general.flow)
         addCard("generalOtherCards", "Flujo", general.flow, LABELS.flow);
+      if (gOther && gOther.children.length === 0) {
+        gOther.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
+      }
       }
 
       function renderSet(s, setKey) {
@@ -1040,6 +1048,16 @@
         if (s.flow) addCard('setOtherCards','Flujo', s.flow, LABELS.flow);
         if (s.status) addCard('setOtherCards','Estado', s.status, LABELS.status);
         if (s.duplicates) addCard('setOtherCards','Duplicados', s.duplicates, LABELS.duplicates);
+
+        // Placeholders No Data para contenedores de cards del set
+        const stc = document.getElementById('setTopCards');
+        const soc = document.getElementById('setOtherCards');
+        if (stc && stc.children.length === 0) {
+          stc.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
+        }
+        if (soc && soc.children.length === 0) {
+          soc.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
+        }
       }
 
       const rawPre = document.getElementById("rawJson");
