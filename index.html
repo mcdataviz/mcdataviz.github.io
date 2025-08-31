@@ -24,14 +24,14 @@
         <div id="generalTopCards" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
       </div>
 
-      <div class="bg-white p-4 rounded shadow sec-general">
+      <div id="generalRobustSection" class="bg-white p-4 rounded shadow sec-general hidden">
         <h3 class="text-lg font-semibold mb-4">Escala robusta</h3>
         <div class="h-24">
           <canvas id="robustBullet"></canvas>
         </div>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4 sec-general">
+      <div id="generalHVSection" class="grid md:grid-cols-2 gap-4 sec-general hidden">
         <div>
           <h3 class="text-lg font-semibold mb-2">Histograma horario</h3>
           <canvas id="hourChart" class="bg-white p-2 rounded" height="200"></canvas>
@@ -42,7 +42,7 @@
         </div>
       </div>
 
-      <div class="sec-general">
+      <div id="generalRecencySection" class="sec-general hidden">
         <h3 class="text-lg font-semibold mb-2">Recencia</h3>
         <div
           id="recencyBullet"
@@ -979,15 +979,22 @@
         if (noDataEl) noDataEl.classList.add('hidden');
         let hasAny = false;
 
-        // Totals / n_trx cards
-        if (s.totals) {
-          addTopCard('setTopCards','Operaciones', s.totals.n_trx, ICONS.operaciones, 'text-blue-500');
-          addTopCard('setTopCards','Ingresos', s.totals.sum_in, ICONS.ingresos, 'text-green-500');
-          addTopCard('setTopCards','Egresos', s.totals.sum_out, ICONS.egresos, 'text-red-500');
-          addTopCard('setTopCards','Neto', s.totals.net, ICONS.neto, 'text-gray-500');
-        } else if (typeof s.n_trx === 'number') {
-          addTopCard('setTopCards','Operaciones', s.n_trx, ICONS.operaciones, 'text-blue-500');
-        }
+        // Totals / n_trx cards con chequeos estrictos
+        const totals = s.totals || {};
+        const flow = s.flow || {};
+        const ops = (typeof totals.n_trx === 'number')
+          ? totals.n_trx
+          : (typeof s.n_trx === 'number')
+            ? s.n_trx
+            : (typeof flow.n_in === 'number' && typeof flow.n_out === 'number')
+              ? (flow.n_in + flow.n_out)
+              : null;
+        if (ops != null) addTopCard('setTopCards','Operaciones', ops, ICONS.operaciones, 'text-blue-500');
+        if (typeof totals.sum_in === 'number') addTopCard('setTopCards','Ingresos', totals.sum_in, ICONS.ingresos, 'text-green-500');
+        if (typeof totals.sum_out === 'number') addTopCard('setTopCards','Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
+        if (typeof totals.net === 'number') addTopCard('setTopCards','Neto', totals.net, ICONS.neto, 'text-gray-500');
+        const hasTop = (document.getElementById('setTopCards')?.children.length || 0) > 0;
+        if (hasTop) { hasAny = true; }
 
         if (s.robust_stats || s.median_abs != null || s.p95_abs != null) {
           renderRobustBullet('setRobustBullet', s, { currency: 'ARS' });
@@ -1027,6 +1034,8 @@
             data: { labels: tfLabels, datasets: [{ data: tfValues, backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444','#6366f1'] }] },
             options: { plugins: { legend: { position: 'bottom' } } },
           });
+          const el = document.getElementById('setTypeStreaksSection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
         }
 
         if (s.recency && s.recency.delta_hist) delete s.recency.delta_hist;
@@ -1068,16 +1077,6 @@
         const anyCards = (document.getElementById('setTopCards')?.children.length || 0) > 0 || (document.getElementById('setOtherCards')?.children.length || 0) > 0;
         if (!hasAny && !anyCards) {
           if (noDataEl) noDataEl.classList.remove('hidden');
-        }
-
-        // Placeholders No Data para contenedores de cards del set
-        const stc = document.getElementById('setTopCards');
-        const soc = document.getElementById('setOtherCards');
-        if (stc && stc.children.length === 0) {
-          stc.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
-        }
-        if (soc && soc.children.length === 0) {
-          soc.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
         }
       }
 
