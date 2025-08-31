@@ -107,22 +107,12 @@
     </div>
 
     <script>
-      // Parse JSON from query param 'p'
+      // Estado en memoria (sin query params)
       let data = {};
       let rawData = {};
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const p = params.get("p");
-        if (p) {
-          data = JSON.parse(decodeURIComponent(p));
-          rawData = JSON.parse(JSON.stringify(data));
-        }
-      } catch (e) {
-        console.error("Error parsing data", e);
-      }
 
       // Estructura de sets: { sets: { ... } }
-      const sets = (data && data.sets) || {};
+      let sets = (data && data.sets) || {};
 
       function syntaxHighlight(json) {
         if (typeof json !== "string") {
@@ -1107,9 +1097,35 @@
           if (!txt) { closeModal(); return; }
           try {
             const parsed = JSON.parse(txt);
-            const url = new URL(window.location.href);
-            url.searchParams.set('p', encodeURIComponent(JSON.stringify(parsed)));
-            window.location.href = url.toString();
+            if (!parsed || !parsed.sets || typeof parsed.sets !== 'object') {
+              throw new Error('El JSON debe contener la clave "sets" con los datos a renderizar.');
+            }
+            // Actualiza estado en memoria
+            data = parsed;
+            rawData = JSON.parse(JSON.stringify(parsed));
+            sets = parsed.sets || {};
+            // Actualiza visor de JSON crudo
+            const rawPre = document.getElementById('rawJson');
+            if (rawPre) rawPre.innerHTML = syntaxHighlight(rawData);
+            // Reconstruye botones de sets
+            const nav = document.getElementById('sidebarNav');
+            // El primer hijo es el botón Cargar datos; preservarlo
+            while (nav.children.length > 1) nav.removeChild(nav.lastChild);
+            const keys = Object.keys(sets);
+            keys.sort((a, b) => (a === 'global' ? -1 : b === 'global' ? 1 : a.localeCompare(b)));
+            keys.forEach((key) => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.dataset.set = key;
+              btn.className = 'w-full text-left px-4 py-2 hover:bg-gray-100';
+              btn.textContent = formatSetLabel(key);
+              btn.addEventListener('click', () => selectSet(key));
+              nav.appendChild(btn);
+            });
+            // Render por defecto
+            const defaultKey = keys.includes('global') ? 'global' : (keys[0] || null);
+            if (defaultKey) selectSet(defaultKey);
+            closeModal();
           } catch (e) {
             errorEl.textContent = 'JSON inválido en Features: ' + (e?.message || e);
             errorEl.classList.remove('hidden');
