@@ -345,16 +345,22 @@
       function renderRecencyBullet(
         divId,
         f,
-        { title = "Recencia • Min–Max y P05–P95 con Mediana/Media" } = {},
+        { title = "Recencia • Min–Max, P05–P95, IQR y medidas" } = {},
       ) {
         const r = (f && f.recency) || {};
+        const p01 = toNum(r.p01_delta_s);
         const p05 = toNum(r.p05_delta_s);
+        const p10 = toNum(r.p10_delta_s);
+        const p25 = toNum(r.p25_delta_s);
+        const p75 = toNum(r.p75_delta_s);
+        const p90 = toNum(r.p90_delta_s);
         const p95 = toNum(r.p95_delta_s);
+        const p99 = toNum(r.p99_delta_s);
         const med = toNum(r.median_delta_s);
         const mean = toNum(r.mean_delta_s);
         const min = toNum(r.min_delta_s);
         const max = toNum(r.max_delta_s);
-        const values = [p05, p95, med, mean, min, max].filter((v) => v != null);
+        const values = [p01,p05,p10,p25,p75,p90,p95,p99,med, mean, min, max].filter((v) => v != null);
         if (!values.length) return;
 
         const xMin = Math.max(0, Math.min(...values, 0));
@@ -388,9 +394,34 @@
             showlegend: false,
           });
         }
+        if (p25 != null && p75 != null) {
+          data.push({
+            x: [p25, p75],
+            y: [0, 0],
+            mode: "lines+markers",
+            line: { color: "#666", width: 8 },
+            marker: { color: "#666", size: 12 },
+            hoverinfo: "skip",
+            showlegend: false,
+          });
+        }
 
         const shapes = [];
         const annotations = [];
+
+        // IQR band as background rect
+        if (p25 != null && p75 != null) {
+          shapes.push({
+            type: 'rect',
+            x0: p25,
+            x1: p75,
+            y0: -0.15,
+            y1: 0.15,
+            fillcolor: '#bbb',
+            opacity: 0.25,
+            line: { width: 0 },
+          });
+        }
 
         if (min != null) {
           shapes.push({
@@ -444,6 +475,14 @@
             showlegend: false,
           });
         }
+        if (p10 != null) {
+          shapes.push({ type: 'line', x0: p10, x1: p10, y0: -0.2, y1: 0.2, line: { color: '#aaa', width: 1, dash: 'dot' } });
+          annotations.push({ x: p10, y: -0.25, text: 'P10', showarrow: false, yanchor: 'top', font: { size: 10 } });
+        }
+        if (p25 != null) {
+          shapes.push({ type: 'line', x0: p25, x1: p25, y0: -0.2, y1: 0.2, line: { color: '#666', width: 1, dash: 'dash' } });
+          annotations.push({ x: p25, y: 0.25, text: 'P25', showarrow: false, yanchor: 'bottom', font: { size: 10 } });
+        }
         if (p95 != null) {
           shapes.push({
             type: "line",
@@ -469,6 +508,22 @@
             hovertemplate: `P95: ${fmtDuration(p95)}<extra></extra>`,
             showlegend: false,
           });
+        }
+        if (p90 != null) {
+          shapes.push({ type: 'line', x0: p90, x1: p90, y0: -0.2, y1: 0.2, line: { color: '#aaa', width: 1, dash: 'dot' } });
+          annotations.push({ x: p90, y: -0.25, text: 'P90', showarrow: false, yanchor: 'top', font: { size: 10 } });
+        }
+        if (p75 != null) {
+          shapes.push({ type: 'line', x0: p75, x1: p75, y0: -0.2, y1: 0.2, line: { color: '#666', width: 1, dash: 'dash' } });
+          annotations.push({ x: p75, y: 0.25, text: 'P75', showarrow: false, yanchor: 'bottom', font: { size: 10 } });
+        }
+        if (p01 != null) {
+          shapes.push({ type: 'line', x0: p01, x1: p01, y0: -0.2, y1: 0.2, line: { color: '#bbb', width: 1, dash: 'dot' } });
+          annotations.push({ x: p01, y: -0.25, text: 'P1', showarrow: false, yanchor: 'top', font: { size: 10 } });
+        }
+        if (p99 != null) {
+          shapes.push({ type: 'line', x0: p99, x1: p99, y0: -0.2, y1: 0.2, line: { color: '#bbb', width: 1, dash: 'dot' } });
+          annotations.push({ x: p99, y: -0.25, text: 'P99', showarrow: false, yanchor: 'top', font: { size: 10 } });
         }
         if (max != null) {
           shapes.push({
