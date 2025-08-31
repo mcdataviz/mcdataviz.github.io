@@ -51,15 +51,15 @@
       </div>
 
       <div class="grid md:grid-cols-3 gap-4 sec-general">
-        <div>
+        <div id="generalTypeFreqSection" class="hidden">
           <h3 class="text-lg font-semibold mb-2">Frecuencia por tipo</h3>
           <canvas id="typeFreqDonut" class="bg-white p-2 rounded w-full" height="200"></canvas>
         </div>
-        <div>
+        <div id="generalStreaksSection" class="hidden">
           <h3 class="text-lg font-semibold mb-2">Rachas 30m OUT vs IN</h3>
           <canvas id="streaksDivergent" class="bg-white p-2 rounded w-full" height="200"></canvas>
         </div>
-        <div>
+        <div id="generalGaugeSection" class="hidden">
           <h3 class="text-lg font-semibold mb-2">Tasa de alternancia</h3>
           <canvas id="alternationGauge" class="bg-white p-4 rounded w-full h-48"></canvas>
         </div>
@@ -856,12 +856,16 @@
         if (typeof totals.sum_out === 'number') addTopCard('generalTopCards', 'Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
         if (typeof totals.net === 'number') addTopCard('generalTopCards', 'Neto', totals.net, ICONS.neto, 'text-gray-500');
 
-        // Placeholders si no hay datos
-        if (gTop && gTop.children.length === 0) {
-          gTop.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
-        }
 
       // Solo métricas generales especificadas: type_freq, novelty, streaks, flow
+      // Oculta por defecto secciones generales opcionales
+      const gTypeSec = document.getElementById('generalTypeFreqSection');
+      const gStreaksSec = document.getElementById('generalStreaksSection');
+      const gGaugeSec = document.getElementById('generalGaugeSection');
+      if (gTypeSec) gTypeSec.classList.add('hidden');
+      if (gStreaksSec) gStreaksSec.classList.add('hidden');
+      if (gGaugeSec) gGaugeSec.classList.add('hidden');
+
       if (general.type_freq) {
         const tfLabels = Object.keys(general.type_freq);
         const tfValues = tfLabels.map((k) => general.type_freq[k]);
@@ -884,6 +888,7 @@
           },
           options: { plugins: { legend: { position: "bottom" } } },
         });
+        if (gTypeSec) gTypeSec.classList.remove('hidden');
       }
 
       // Todas las visualizaciones dependen del set seleccionado (renderAll)
@@ -944,6 +949,8 @@
           gauge.setMinValue(0);
           gauge.animationSpeed = 32;
           gauge.set(s.alternation_rate || 0);
+        if (gStreaksSec) gStreaksSec.classList.remove('hidden');
+        if (gGaugeSec) gGaugeSec.classList.remove('hidden');
         }
 
         if (general.temporal) {
@@ -957,9 +964,6 @@
         addCard("generalOtherCards", "Novedad", general.novelty, LABELS.novelty);
       if (general.flow)
         addCard("generalOtherCards", "Flujo", general.flow, LABELS.flow);
-      if (gOther && gOther.children.length === 0) {
-        gOther.innerHTML = '<h2 class="text-gray-500 text-lg">No Data.</h2>';
-      }
       }
 
       function renderSet(s, setKey) {
@@ -1178,6 +1182,8 @@
             data = parsed;
             rawData = JSON.parse(JSON.stringify(parsed));
             sets = parsed.sets || {};
+            // Render grupo General actualizado con nivel raíz del JSON
+            renderGeneral(data || {});
             // Actualiza visor de JSON crudo
             const rawPre = document.getElementById('rawJson');
             if (rawPre) rawPre.innerHTML = syntaxHighlight(rawData);
