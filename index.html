@@ -62,27 +62,7 @@
         </div>
       </div>
 
-      <div class="grid md:grid-cols-2 gap-4 sec-by-direction hidden">
-        <div>
-          <h3 class="text-lg font-semibold mb-2">Por dirección: Operaciones</h3>
-          <canvas id="byDirCount" class="bg-white p-2 rounded" height="200"></canvas>
-        </div>
-        <div>
-          <h3 class="text-lg font-semibold mb-2">Por dirección: Montos (Mediana, P95, P99)</h3>
-          <canvas id="byDirAmounts" class="bg-white p-2 rounded" height="200"></canvas>
-        </div>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-4 sec-by-type hidden">
-        <div>
-          <h3 class="text-lg font-semibold mb-2">Por tipo: Operaciones</h3>
-          <canvas id="byTypeCount" class="bg-white p-2 rounded" height="240"></canvas>
-        </div>
-        <div>
-          <h3 class="text-lg font-semibold mb-2">Por tipo: Mediana de monto</h3>
-          <canvas id="byTypeMedian" class="bg-white p-2 rounded" height="240"></canvas>
-        </div>
-      </div>
+      
 
     <div id="otherCards" class="grid md:grid-cols-3 gap-4 sec-general"></div>
         </div>
@@ -141,30 +121,8 @@
         console.error("Error parsing data", e);
       }
 
-      // Estructura de sets: { sets: { global, by_direction?, by_type?, by_direction_*, by_type_* } }
-      const sets = (data && data.sets) || null;
-      const general = (sets && sets.global) || {};
-      let byDir = (sets && sets.by_direction) || {};
-      let byType = (sets && sets.by_type) || {};
-      // Compatibilidad con sets planos por prefijo (sin modificar JSON)
-      if (sets && (!byDir || !Object.keys(byDir).length)) {
-        const dir = {};
-        Object.keys(sets).forEach((k) => {
-          if (k.startsWith('by_direction_')) {
-            dir[k.replace('by_direction_', '')] = sets[k];
-          }
-        });
-        if (Object.keys(dir).length) byDir = dir;
-      }
-      if (sets && (!byType || !Object.keys(byType).length)) {
-        const typ = {};
-        Object.keys(sets).forEach((k) => {
-          if (k.startsWith('by_type_')) {
-            typ[k.replace('by_type_', '')] = sets[k];
-          }
-        });
-        if (Object.keys(typ).length) byType = typ;
-      }
+      // Estructura de sets: { sets: { ... } }
+      const sets = (data && data.sets) || {};
 
       function syntaxHighlight(json) {
         if (typeof json !== "string") {
@@ -750,15 +708,43 @@
         container.appendChild(card);
       }
 
-      if (general.tier != null) {
+      function setTierMeta(g) {
         const dashboard = document.getElementById("dashboard");
         const h1 = dashboard.querySelector("h1");
-        const p = document.createElement("p");
-        p.innerHTML = `<strong>${LABELS.tier}:</strong> ${formatNumber(general.tier)}`;
-        h1.insertAdjacentElement("afterend", p);
+        let meta = document.getElementById('setMeta');
+        if (!meta) {
+          meta = document.createElement('p');
+          meta.id = 'setMeta';
+          h1.insertAdjacentElement('afterend', meta);
+        }
+        const tierText = (g && g.tier != null) ? `${formatNumber(g.tier)}` : 'N/D';
+        meta.innerHTML = `<strong>${LABELS.tier}:</strong> ${tierText}`;
       }
 
-        if (general.totals) {
+      function clearContainers() {
+        const ids = ['topCards', 'otherCards'];
+        ids.forEach((id) => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+        // Destroy chart instances if present
+        ['hourChart','velocityBurstChart','typeFreqDonut','streaksDivergent','robustBullet'].forEach((id) => {
+          const c = document.getElementById(id);
+          if (c && c._chartInstance) { try { c._chartInstance.destroy(); } catch(e){} }
+        });
+      }
+
+      function chartOn(canvasId, cfg) {
+        const c = document.getElementById(canvasId);
+        if (!c) return null;
+        if (c._chartInstance) { try { c._chartInstance.destroy(); } catch(e){} }
+        const ch = new Chart(c, cfg);
+        c._chartInstance = ch;
+        return ch;
+      }
+
+      function renderAll(general) {
+        clearContainers();
+        setTierMeta(general);
+
+      if (general.totals) {
           addTopCard(
             "topCards",
             "Operaciones",
@@ -791,7 +777,7 @@
           );
         }
 
-      if (general.robust_stats) {
+      if (general.robust_stats || general.median_abs != null || general.p95_abs != null) {
         renderRobustBullet("robustBullet", general, { currency: "ARS" });
       }
 
@@ -801,8 +787,7 @@
           .map((h) => parseInt(h))
           .sort((a, b) => a - b);
         const counts = hours.map((h) => hist[h]);
-        const hourCtx = document.getElementById("hourChart");
-        new Chart(hourCtx, {
+        chartOn("hourChart", {
           type: "bar",
           data: {
             labels: hours,
@@ -827,7 +812,7 @@
           v.max_cnt_60m,
           v.max_cnt_24h,
         ];
-        new Chart(document.getElementById("velocityBurstChart"), {
+        chartOn("velocityBurstChart", {
           type: "bar",
           data: {
             labels: vLabels,
@@ -846,7 +831,7 @@
       if (general.type_freq) {
         const tfLabels = Object.keys(general.type_freq);
         const tfValues = tfLabels.map((k) => general.type_freq[k]);
-        new Chart(document.getElementById("typeFreqDonut"), {
+        chartOn("typeFreqDonut", {
           type: "doughnut",
           data: {
             labels: tfLabels,
@@ -867,98 +852,7 @@
         });
       }
 
-      // by_direction visualizations
-      if (byDir && typeof byDir === 'object' && Object.keys(byDir).length) {
-        const dirLabels = Object.keys(byDir);
-        const get = (o, k, d = 0) => {
-          const v = o?.[k];
-          return Number.isFinite(+v) ? +v : d;
-        };
-
-        // Counts per direction
-        const dirCounts = dirLabels.map((k) => get(byDir[k], 'n_trx', 0));
-        new Chart(document.getElementById('byDirCount'), {
-          type: 'bar',
-          data: {
-            labels: dirLabels,
-            datasets: [
-              {
-                label: 'Operaciones',
-                data: dirCounts,
-                backgroundColor: ['#10b981', '#ef4444', '#3b82f6', '#f59e0b'],
-              },
-            ],
-          },
-          options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } },
-        });
-
-        // Amount scale per direction: median, p95, p99
-        const med = dirLabels.map((k) => get(byDir[k], 'median_abs', 0));
-        const p95 = dirLabels.map((k) => get(byDir[k], 'p95_abs', 0));
-        const p99 = dirLabels.map((k) => get(byDir[k], 'p99_abs', 0));
-        const fmtARS = (v) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
-        new Chart(document.getElementById('byDirAmounts'), {
-          type: 'bar',
-          data: {
-            labels: dirLabels,
-            datasets: [
-              { label: 'Mediana', data: med, backgroundColor: '#60a5fa' },
-              { label: 'P95', data: p95, backgroundColor: '#f59e0b' },
-              { label: 'P99', data: p99, backgroundColor: '#ef4444' },
-            ],
-          },
-          options: {
-            responsive: true,
-            plugins: { legend: { position: 'bottom' } },
-            scales: { y: { beginAtZero: true, ticks: { callback: (v) => fmtARS(v) } } },
-          },
-        });
-      }
-
-      // by_type visualizations
-      if (byType && typeof byType === 'object' && Object.keys(byType).length) {
-        const entries = Object.entries(byType);
-        const toNum = (v) => (Number.isFinite(+v) ? +v : 0);
-
-        // Sort by n_trx desc for counts chart
-        const byCount = [...entries].sort((a, b) => toNum(b[1]?.n_trx) - toNum(a[1]?.n_trx));
-        const typeLabelsCount = byCount.map(([k]) => k);
-        const typeCounts = byCount.map(([, v]) => toNum(v?.n_trx));
-        new Chart(document.getElementById('byTypeCount'), {
-          type: 'bar',
-          data: {
-            labels: typeLabelsCount,
-            datasets: [
-              { label: 'Operaciones', data: typeCounts, backgroundColor: '#6366f1' },
-            ],
-          },
-          options: {
-            indexAxis: 'y',
-            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
-            plugins: { legend: { display: false } },
-          },
-        });
-
-        // Sort by median_abs desc for amounts chart
-        const byMedian = [...entries].sort((a, b) => toNum(b[1]?.median_abs) - toNum(a[1]?.median_abs));
-        const typeLabelsMed = byMedian.map(([k]) => k);
-        const typeMedians = byMedian.map(([, v]) => toNum(v?.median_abs));
-        const fmtARS = (v) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(v);
-        new Chart(document.getElementById('byTypeMedian'), {
-          type: 'bar',
-          data: {
-            labels: typeLabelsMed,
-            datasets: [
-              { label: 'Mediana de monto', data: typeMedians, backgroundColor: '#10b981' },
-            ],
-          },
-          options: {
-            indexAxis: 'y',
-            scales: { x: { beginAtZero: true, ticks: { callback: (v) => fmtARS(v) } } },
-            plugins: { legend: { display: false } },
-          },
-        });
-      }
+      // Todas las visualizaciones dependen del set seleccionado (renderAll)
 
       if (general.recency && general.recency.delta_hist) {
         delete general.recency.delta_hist;
@@ -972,7 +866,7 @@
       if (general.streaks) {
         const s = general.streaks;
         const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
-        new Chart(document.getElementById("streaksDivergent"), {
+        chartOn("streaksDivergent", {
           type: "bar",
           data: {
             labels: [""],
@@ -1067,31 +961,36 @@
       if (general.duplicates)
         addCard("otherCards", "Duplicados", general.duplicates, LABELS.duplicates);
 
+      }
+
       const rawPre = document.getElementById("rawJson");
       if (rawPre) {
         rawPre.innerHTML = syntaxHighlight(rawData);
       }
 
-      // Sidebar section switching
-      const SECTION_SELECTORS = {
-        global: '.sec-general',
-        'by-direction': '.sec-by-direction',
-        'by-type': '.sec-by-type',
-      };
-      function showSection(key) {
-        const all = '.sec-general,.sec-by-direction,.sec-by-type';
-        document.querySelectorAll(all).forEach((el) => el.classList.add('hidden'));
-        const sel = SECTION_SELECTORS[key] || SECTION_SELECTORS.global;
-        document.querySelectorAll(sel).forEach((el) => el.classList.remove('hidden'));
+      function formatSetLabel(key) {
+        if (key === 'global') return 'Global';
+        if (key.startsWith('by_direction_')) {
+          const name = key.replace('by_direction_', '');
+          return 'Por dirección: ' + name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        if (key.startsWith('by_type_')) {
+          const name = key.replace('by_type_', '');
+          return 'Por tipo: ' + name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        return key;
+      }
+      function selectSet(key) {
         // button active state
-        document.querySelectorAll('#sidebar [data-section]').forEach((btn) => {
+        document.querySelectorAll('#sidebarNav [data-set]').forEach((btn) => {
           btn.classList.remove('bg-gray-200', 'text-gray-900');
         });
-        const active = document.querySelector(`#sidebar [data-section="${key}"]`);
+        const active = document.querySelector(`#sidebarNav [data-set="${key}"]`);
         if (active) active.classList.add('bg-gray-200', 'text-gray-900');
-        // resize charts after toggling visibility
+        const s = sets[key] || {};
+        renderAll(s);
         try { window.dispatchEvent(new Event('resize')); } catch (e) {}
-        if (key === 'global' && window.Plotly && document.getElementById('recencyBullet')) {
+        if (window.Plotly && document.getElementById('recencyBullet')) {
           try { Plotly.Plots.resize('recencyBullet'); } catch (e) {}
         }
       }
@@ -1105,22 +1004,19 @@
         loadBtn.textContent = 'Cargar datos';
         nav.appendChild(loadBtn);
 
-        const sections = [];
-        if (general && Object.keys(general).length) sections.push(['global', 'Global']);
-        if (byDir && Object.keys(byDir).length) sections.push(['by-direction', 'Por dirección']);
-        if (byType && Object.keys(byType).length) sections.push(['by-type', 'Por tipo']);
-        // Fallback: if no sets found, don't render buttons
-        sections.forEach(([key, label]) => {
+        const keys = Object.keys(sets || {});
+        keys.sort((a, b) => (a === 'global' ? -1 : b === 'global' ? 1 : a.localeCompare(b)));
+        keys.forEach((key) => {
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.dataset.section = key;
+          btn.dataset.set = key;
           btn.className = 'w-full text-left px-4 py-2 hover:bg-gray-100';
-          btn.textContent = label;
-          btn.addEventListener('click', () => showSection(key));
+          btn.textContent = formatSetLabel(key);
+          btn.addEventListener('click', () => selectSet(key));
           nav.appendChild(btn);
         });
-        const defaultKey = sections.find(([k]) => k === 'global')?.[0] || sections[0]?.[0] || 'global';
-        showSection(defaultKey);
+        const defaultKey = keys.includes('global') ? 'global' : (keys[0] || null);
+        if (defaultKey) selectSet(defaultKey);
       }
       setupSidebar();
 
