@@ -82,7 +82,7 @@
           </div>
         </div>
 
-        <div id="setHVSection" class="grid md:grid-cols-3 gap-4 mt-2">
+        <div id="setHVSection" class="grid md:grid-cols-2 gap-4 mt-2">
           <div>
             <h3 class="text-lg font-semibold mb-2">Histograma horario (Set)</h3>
             <canvas id="setHourChart" class="bg-white p-2 rounded" height="200"></canvas>
@@ -90,10 +90,6 @@
           <div>
             <h3 class="text-lg font-semibold mb-2">Ráfagas por ventana (Set)</h3>
             <canvas id="setVelocityBurstChart" class="bg-white p-2 rounded" height="200"></canvas>
-          </div>
-          <div>
-            <h3 class="text-lg font-semibold mb-2">% Fin de semana (Set)</h3>
-            <canvas id="setWeekendGauge" class="bg-white p-4 rounded w-full h-48"></canvas>
           </div>
         </div>
 
@@ -958,6 +954,11 @@
               ? (flow.n_in + flow.n_out)
               : null;
         if (ops != null) addTopCard('setTopCards','Operaciones', ops, ICONS.operaciones, 'text-blue-500');
+        // Weekend frac como card numérica junto a Operaciones
+        if (s.temporal && typeof s.temporal.weekend_frac === 'number') {
+          const weekendPct = s.temporal.weekend_frac * 100;
+          addTopCard('setTopCards','Fin de semana (%)', weekendPct, ICONS.operaciones, 'text-amber-500');
+        }
         if (typeof totals.sum_in === 'number') addTopCard('setTopCards','Ingresos', totals.sum_in, ICONS.ingresos, 'text-green-500');
         if (typeof totals.sum_out === 'number') addTopCard('setTopCards','Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
         if (typeof totals.net === 'number') addTopCard('setTopCards','Neto', totals.net, ICONS.neto, 'text-gray-500');
@@ -983,17 +984,7 @@
           hasAny = true;
         }
 
-        // Weekend gauge (temporal.weekend_frac)
-        if (s.temporal && typeof s.temporal.weekend_frac === 'number') {
-          const wCanvas = document.getElementById('setWeekendGauge');
-          if (wCanvas) {
-            const wOpts = { angle: 0, lineWidth: 0.2, radiusScale: 1, pointer: { length: 0.6, strokeWidth: 0.035, color: '#111827' }, limitMax: true, limitMin: true, strokeColor: '#E5E7EB', staticZones: [ { strokeStyle: '#ef4444', min: 0, max: 0.25 }, { strokeStyle: '#f59e0b', min: 0.25, max: 0.5 }, { strokeStyle: '#10b981', min: 0.5, max: 1 } ], staticLabels: { font: '10px sans-serif', labels: [0,0.5,1], fractionDigits: 2 } };
-            const wg = new Gauge(wCanvas).setOptions(wOpts);
-            wg.maxValue = 1; wg.setMinValue(0); wg.animationSpeed = 32; wg.set(s.temporal.weekend_frac);
-            const el = document.getElementById('setHVSection'); if (el) el.classList.remove('hidden');
-            hasAny = true;
-          }
-        }
+        // Nota: se muestra como card en topCards; sin gauge.
 
         if (s.velocity) {
           const v = s.velocity;
@@ -1037,8 +1028,7 @@
           hasAny = true;
         }
 
-        // Other cards
-        if (s.temporal) { const tmp = { ...s.temporal }; delete tmp.hour_hist; addCard('setOtherCards','Temporal', tmp, LABELS.temporal); }
+        // Other cards (sin 'Temporal' para evitar duplicar weekend_frac)
         if (s.robust_stats) addCard('setOtherCards','Estadísticas robustas', s.robust_stats, LABELS.robust_stats);
         // No listamos Recencia (se muestra con bullet). Quitamos Redondez, Estado y Duplicados.
         if (s.novelty) addCard('setOtherCards','Novedad', s.novelty, LABELS.novelty);
