@@ -59,10 +59,8 @@
           <h3 class="text-lg font-semibold mb-2">Rachas 30m OUT vs IN</h3>
           <canvas id="streaksDivergent" class="bg-white p-2 rounded w-full" height="200"></canvas>
         </div>
-        <div id="generalGaugeSection" class="hidden">
-          <h3 class="text-lg font-semibold mb-2">Tasa de alternancia</h3>
-          <canvas id="alternationGauge" class="bg-white p-4 rounded w-full h-48"></canvas>
-        </div>
+        <!-- Gauge de alternancia oculto (se deduce de Rachas) -->
+        <div id="generalGaugeSection" class="hidden"></div>
       </div>
 
       
@@ -104,7 +102,7 @@
           <div id="setRecencyBullet" class="bg-white p-2 rounded w-full h-48"></div>
         </div>
 
-        <div id="setTypeStreaksSection" class="grid md:grid-cols-3 gap-4 mt-2">
+        <div id="setTypeStreaksSection" class="grid md:grid-cols-2 gap-4 mt-2">
           <div>
             <h3 class="text-lg font-semibold mb-2">Frecuencia por tipo (Set)</h3>
             <canvas id="setTypeFreqDonut" class="bg-white p-2 rounded w-full" height="200"></canvas>
@@ -112,10 +110,6 @@
           <div>
             <h3 class="text-lg font-semibold mb-2">Rachas 30m OUT vs IN (Set)</h3>
             <canvas id="setStreaksDivergent" class="bg-white p-2 rounded w-full" height="200"></canvas>
-          </div>
-          <div>
-            <h3 class="text-lg font-semibold mb-2">Tasa de alternancia (Set)</h3>
-            <canvas id="setAlternationGauge" class="bg-white p-4 rounded w-full h-48"></canvas>
           </div>
         </div>
 
@@ -845,7 +839,7 @@
         const gTop = document.getElementById('generalTopCards');
         const gOther = document.getElementById('generalOtherCards');
         if (gTop) gTop.innerHTML = '';
-        if (gOther) gOther.innerHTML = '';
+        if (gOther) { gOther.innerHTML = ''; gOther.classList.add('hidden'); }
 
         setTierMeta(general);
 
@@ -901,7 +895,6 @@
       if (general.streaks) {
         const s = general.streaks;
         if (gStreaksSec) gStreaksSec.classList.remove('hidden');
-        if (gGaugeSec) gGaugeSec.classList.remove('hidden');
         const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
         chartOn("streaksDivergent", {
           type: "bar",
@@ -929,41 +922,12 @@
             plugins: { legend: { display: false } },
           },
         });
-
-          const gaugeCanvas = document.getElementById("alternationGauge");
-          const gaugeOpts = {
-            angle: 0,
-            lineWidth: 0.2,
-            radiusScale: 1,
-            pointer: { length: 0.6, strokeWidth: 0.035, color: "#111827" },
-            limitMax: true,
-            limitMin: true,
-            strokeColor: "#E5E7EB",
-            staticZones: [
-              { strokeStyle: "#10b981", min: 0, max: 0.33 },
-              { strokeStyle: "#f59e0b", min: 0.33, max: 0.66 },
-              { strokeStyle: "#ef4444", min: 0.66, max: 1 },
-            ],
-            staticLabels: {
-              font: "10px sans-serif",
-              labels: [0, 0.5, 1],
-              fractionDigits: 2,
-            },
-          };
-          const gauge = new Gauge(gaugeCanvas).setOptions(gaugeOpts);
-          gauge.maxValue = 1;
-          gauge.setMinValue(0);
-          gauge.animationSpeed = 32;
-          gauge.set(s.alternation_rate || 0);
-        }
+      }
 
       // Sin tarjeta de Temporal en General (se entiende en los sets)
 
-      // Tarjetas generales: solo Novedad y Flujo según lo pedido
-      if (general.novelty)
-        addCard("generalOtherCards", "Novedad", general.novelty, LABELS.novelty);
-      if (general.flow)
-        addCard("generalOtherCards", "Flujo", general.flow, LABELS.flow);
+      // Ocultar tarjetas de Novedad y Flujo en General (no se muestran)
+      // Si a futuro se agregan otras, recuerde quitar la clase 'hidden' cuando se inserten.
       }
 
       function renderSet(s, setKey) {
@@ -1070,13 +1034,6 @@
             data: { labels: [''], datasets: [ { label: 'OUT', data: [-(st.max_out_30m || 0)], backgroundColor: '#ef4444' }, { label: 'IN', data: [st.max_in_30m || 0], backgroundColor: '#10b981' } ] },
             options: { indexAxis: 'y', scales: { x: { min: -maxVal, max: maxVal, ticks: { precision: 0 } }, y: { stacked: true, display: false } }, plugins: { legend: { display: false } } },
           });
-
-          const gaugeCanvas = document.getElementById('setAlternationGauge');
-          if (gaugeCanvas) {
-            const gaugeOpts = { angle: 0, lineWidth: 0.2, radiusScale: 1, pointer: { length: 0.6, strokeWidth: 0.035, color: '#111827' }, limitMax: true, limitMin: true, strokeColor: '#E5E7EB', staticZones: [ { strokeStyle: '#10b981', min: 0, max: 0.33 }, { strokeStyle: '#f59e0b', min: 0.33, max: 0.66 }, { strokeStyle: '#ef4444', min: 0.66, max: 1 } ], staticLabels: { font: '10px sans-serif', labels: [0,0.5,1], fractionDigits: 2 } };
-            const gauge = new Gauge(gaugeCanvas).setOptions(gaugeOpts);
-            gauge.maxValue = 1; gauge.setMinValue(0); gauge.animationSpeed = 32; gauge.set(st.alternation_rate || 0);
-          }
           hasAny = true;
         }
 
