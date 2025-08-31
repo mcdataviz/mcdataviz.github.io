@@ -844,90 +844,18 @@
 
         setTierMeta(general);
 
-      if (general.totals) {
-          addTopCard(
-            "generalTopCards",
-            "Operaciones",
-            general.totals.n_trx,
-            ICONS.operaciones,
-            "text-blue-500",
-          );
-          addTopCard(
-            "generalTopCards",
-            "Ingresos",
-            general.totals.sum_in,
-            ICONS.ingresos,
-            "text-green-500",
-          );
-          addTopCard(
-            "generalTopCards",
-            "Egresos",
-            general.totals.sum_out,
-            ICONS.egresos,
-            "text-red-500",
-          );
-          addTopCard("generalTopCards", "Neto", general.totals.net, ICONS.neto, "text-gray-500");
-        } else if (typeof general.n_trx === 'number') {
-          addTopCard(
-            "generalTopCards",
-            "Operaciones",
-            general.n_trx,
-            ICONS.operaciones,
-            "text-blue-500",
-          );
-        }
+        // Totals como cards + Operaciones
+        const totals = general.totals || {};
+        const flow = general.flow || {};
+        const ops = (typeof totals.n_trx === 'number') ? totals.n_trx : (
+          (typeof flow.n_in === 'number' && typeof flow.n_out === 'number') ? (flow.n_in + flow.n_out) : null
+        );
+        if (ops != null) addTopCard('generalTopCards', 'Operaciones', ops, ICONS.operaciones, 'text-blue-500');
+        if (typeof totals.sum_in === 'number') addTopCard('generalTopCards', 'Ingresos', totals.sum_in, ICONS.ingresos, 'text-green-500');
+        if (typeof totals.sum_out === 'number') addTopCard('generalTopCards', 'Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
+        if (typeof totals.net === 'number') addTopCard('generalTopCards', 'Neto', totals.net, ICONS.neto, 'text-gray-500');
 
-      if (general.robust_stats || general.median_abs != null || general.p95_abs != null) {
-        renderRobustBullet("robustBullet", general, { currency: "ARS" });
-      }
-
-      if (general.temporal && general.temporal.hour_hist) {
-        const hist = general.temporal.hour_hist;
-        const hours = Object.keys(hist)
-          .map((h) => parseInt(h))
-          .sort((a, b) => a - b);
-        const counts = hours.map((h) => hist[h]);
-        chartOn("hourChart", {
-          type: "bar",
-          data: {
-            labels: hours,
-            datasets: [
-              {
-                label: "Operaciones",
-                data: counts,
-                backgroundColor: "#0d6efd",
-              },
-            ],
-          },
-          options: { scales: { y: { beginAtZero: true } } },
-        });
-      }
-
-      if (general.velocity) {
-        const v = general.velocity;
-        const vLabels = ["5m", "30m", "60m", "24h"];
-        const vValues = [
-          v.max_cnt_5m,
-          v.max_cnt_30m,
-          v.max_cnt_60m,
-          v.max_cnt_24h,
-        ];
-        chartOn("velocityBurstChart", {
-          type: "bar",
-          data: {
-            labels: vLabels,
-            datasets: [
-              {
-                label: "Ráfagas",
-                data: vValues,
-                backgroundColor: "#f59e0b",
-              },
-            ],
-          },
-          options: { scales: { y: { beginAtZero: true } } },
-        });
-      }
-
+      // Solo métricas generales especificadas: type_freq, novelty, streaks, flow
       if (general.type_freq) {
         const tfLabels = Object.keys(general.type_freq);
         const tfValues = tfLabels.map((k) => general.type_freq[k]);
@@ -954,15 +882,7 @@
 
       // Todas las visualizaciones dependen del set seleccionado (renderAll)
 
-      if (general.recency && general.recency.delta_hist) {
-        delete general.recency.delta_hist;
-      }
-        if (general.recency) {
-          renderRecencyBullet('recencyBullet', general, {
-            title: 'Recencia • Min–Max y P05–P95 con Mediana/Media'
-          });
-        }
-
+      // Streaks generales
       if (general.streaks) {
         const s = general.streaks;
         const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
@@ -1026,40 +946,11 @@
         addCard("otherCards", "Temporal", temporalData, LABELS.temporal);
       }
 
-      if (general.robust_stats)
-        addCard(
-          "generalOtherCards",
-          "Estadísticas robustas",
-          general.robust_stats,
-          LABELS.robust_stats,
-        );
-      //if (data.velocity)
-      //  addCard("otherCards", "Velocidad", data.velocity, LABELS.velocity);
-      if (general.recency)
-        addCard("generalOtherCards", "Recencia", general.recency, LABELS.recency);
+      // Tarjetas generales: solo Novedad y Flujo según lo pedido
       if (general.novelty)
         addCard("generalOtherCards", "Novedad", general.novelty, LABELS.novelty);
-      //if (data.type_freq)
-      //  addCard("otherCards", "Frecuencia por tipo", data.type_freq);
-      //if (data.type_group_freq)
-      //  addCard(
-      //    "otherCards",
-       //   "Frecuencia por grupo de tipo",
-       //   data.type_group_freq,
-       // );
-      if (general.roundness)
-        addCard("generalOtherCards", "Redondez", general.roundness, LABELS.roundness);
-      //if (data.streaks)
-      //  addCard("otherCards", "Rachas", data.streaks, LABELS.streaks);
-      if (general.location)
-        addCard("generalOtherCards", "Ubicación", general.location, LABELS.location);
-      if (general.flow) addCard("generalOtherCards", "Flujo", general.flow, LABELS.flow);
-      //if (data.coherence)
-      //  addCard("otherCards", "Coherencia", data.coherence, LABELS.coherence);
-      if (general.status)
-        addCard("generalOtherCards", "Estado", general.status, LABELS.status);
-      if (general.duplicates)
-        addCard("generalOtherCards", "Duplicados", general.duplicates, LABELS.duplicates);
+      if (general.flow)
+        addCard("generalOtherCards", "Flujo", general.flow, LABELS.flow);
       }
 
       function renderSet(s, setKey) {
@@ -1203,8 +1094,8 @@
           btn.addEventListener('click', () => selectSet(key));
           nav.appendChild(btn);
         });
-        // Render general first
-        if (sets.global) renderGeneral(sets.global);
+        // Render general first (usa métricas de nivel raíz)
+        renderGeneral(data || {});
         const defaultKey = keys.includes('global') ? 'global' : (keys[0] || null);
         if (defaultKey) selectSet(defaultKey);
       }
