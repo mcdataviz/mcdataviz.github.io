@@ -75,15 +75,16 @@
         </div>
 
         <div id="setTopCards" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+        <div id="setNoData" class="text-gray-500 text-lg hidden">No Data.</div>
 
-        <div class="bg-white p-4 rounded shadow mt-4">
+        <div id="setRobustSection" class="bg-white p-4 rounded shadow mt-4">
           <h3 class="text-lg font-semibold mb-4">Escala robusta (Set)</h3>
           <div class="h-24">
             <canvas id="setRobustBullet"></canvas>
           </div>
         </div>
 
-        <div class="grid md:grid-cols-2 gap-4 mt-2">
+        <div id="setHVSection" class="grid md:grid-cols-2 gap-4 mt-2">
           <div>
             <h3 class="text-lg font-semibold mb-2">Histograma horario (Set)</h3>
             <canvas id="setHourChart" class="bg-white p-2 rounded" height="200"></canvas>
@@ -94,12 +95,12 @@
           </div>
         </div>
 
-        <div class="mt-2">
+        <div id="setRecencySection" class="mt-2">
           <h3 class="text-lg font-semibold mb-2">Recencia (Set)</h3>
           <div id="setRecencyBullet" class="bg-white p-2 rounded w-full h-48"></div>
         </div>
 
-        <div class="grid md:grid-cols-3 gap-4 mt-2">
+        <div id="setTypeStreaksSection" class="grid md:grid-cols-3 gap-4 mt-2">
           <div>
             <h3 class="text-lg font-semibold mb-2">Frecuencia por tipo (Set)</h3>
             <canvas id="setTypeFreqDonut" class="bg-white p-2 rounded w-full" height="200"></canvas>
@@ -971,6 +972,12 @@
         });
         const setLabelEl = document.getElementById('currentSetLabel');
         if (setLabelEl) setLabelEl.textContent = formatSetLabel(setKey || '—');
+        // Ocultar secciones por defecto y reset "No Data"
+        const secIds = ['setRobustSection','setHVSection','setRecencySection','setTypeStreaksSection'];
+        secIds.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+        const noDataEl = document.getElementById('setNoData');
+        if (noDataEl) noDataEl.classList.add('hidden');
+        let hasAny = false;
 
         // Totals / n_trx cards
         if (s.totals) {
@@ -984,6 +991,8 @@
 
         if (s.robust_stats || s.median_abs != null || s.p95_abs != null) {
           renderRobustBullet('setRobustBullet', s, { currency: 'ARS' });
+          const el = document.getElementById('setRobustSection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
         }
 
         if (s.temporal && s.temporal.hour_hist) {
@@ -995,6 +1004,8 @@
             data: { labels: hours, datasets: [{ label:'Operaciones', data: counts, backgroundColor: '#0d6efd' }] },
             options: { scales: { y: { beginAtZero: true } } },
           });
+          const el = document.getElementById('setHVSection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
         }
 
         if (s.velocity) {
@@ -1004,6 +1015,8 @@
             data: { labels: ['5m','30m','60m','24h'], datasets: [{ label: 'Ráfagas', data: [v.max_cnt_5m, v.max_cnt_30m, v.max_cnt_60m, v.max_cnt_24h], backgroundColor: '#f59e0b' }] },
             options: { scales: { y: { beginAtZero: true } } },
           });
+          const el = document.getElementById('setHVSection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
         }
 
         if (s.type_freq) {
@@ -1019,6 +1032,8 @@
         if (s.recency && s.recency.delta_hist) delete s.recency.delta_hist;
         if (s.recency) {
           renderRecencyBullet('setRecencyBullet', s, { title: 'Recencia • Min–Max, P05–P95, IQR y medidas' });
+          const el = document.getElementById('setRecencySection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
         }
 
         if (s.streaks) {
@@ -1036,6 +1051,8 @@
             const gauge = new Gauge(gaugeCanvas).setOptions(gaugeOpts);
             gauge.maxValue = 1; gauge.setMinValue(0); gauge.animationSpeed = 32; gauge.set(st.alternation_rate || 0);
           }
+          const el = document.getElementById('setTypeStreaksSection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
         }
 
         // Other cards
@@ -1048,6 +1065,10 @@
         if (s.flow) addCard('setOtherCards','Flujo', s.flow, LABELS.flow);
         if (s.status) addCard('setOtherCards','Estado', s.status, LABELS.status);
         if (s.duplicates) addCard('setOtherCards','Duplicados', s.duplicates, LABELS.duplicates);
+        const anyCards = (document.getElementById('setTopCards')?.children.length || 0) > 0 || (document.getElementById('setOtherCards')?.children.length || 0) > 0;
+        if (!hasAny && !anyCards) {
+          if (noDataEl) noDataEl.classList.remove('hidden');
+        }
 
         // Placeholders No Data para contenedores de cards del set
         const stc = document.getElementById('setTopCards');
