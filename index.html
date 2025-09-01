@@ -707,6 +707,7 @@
           "frac_outlier_z>=3.5": "% outliers robustos (%)",
         },
         velocity: {
+          max_cnt_1m: "Máx. ops en 1 min (#)",
           max_cnt_5m: "Máx. ops en 5 min (#)",
           max_cnt_30m: "Máx. ops en 30 min (#)",
           max_cnt_60m: "Máx. ops en 60 min (#)",
@@ -1020,9 +1021,12 @@
 
         if (s.velocity) {
           const v = s.velocity;
+          const labels = ['1m','5m','30m','60m','24h'];
+          const to0 = (x) => (Number.isFinite(+x) ? +x : 0);
+          const values = [to0(v.max_cnt_1m), to0(v.max_cnt_5m), to0(v.max_cnt_30m), to0(v.max_cnt_60m), to0(v.max_cnt_24h)];
           chartOn('setVelocityBurstChart', {
             type: 'bar',
-            data: { labels: ['5m','30m','60m','24h'], datasets: [{ label: 'Ráfagas', data: [v.max_cnt_5m, v.max_cnt_30m, v.max_cnt_60m, v.max_cnt_24h], backgroundColor: '#f59e0b' }] },
+            data: { labels, datasets: [{ label: 'Ráfagas', data: values, backgroundColor: '#f59e0b' }] },
             options: { scales: { y: { beginAtZero: true } } },
           });
           const el = document.getElementById('setHVSection'); if (el) el.classList.remove('hidden');
