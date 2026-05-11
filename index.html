@@ -74,12 +74,18 @@
 
         <div id="setTopCards" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
         <div id="setNoData" class="text-gray-500 text-lg hidden">No Data.</div>
+        <div id="setRiskFlags" class="flex flex-wrap gap-2 mt-2 hidden"></div>
 
         <div id="setRobustSection" class="bg-white p-4 rounded shadow mt-4">
           <h3 class="text-lg font-semibold mb-4">Escala robusta (Set)</h3>
           <div class="h-24">
             <canvas id="setRobustBullet"></canvas>
           </div>
+        </div>
+
+        <div id="setAnomaliesSection" class="grid md:grid-cols-2 gap-4 mt-2 hidden">
+          <div id="setAnomaliesCard" class="bg-white p-4 rounded shadow"></div>
+          <div id="setTrendCard" class="bg-white p-4 rounded shadow hidden"></div>
         </div>
 
         <div id="setHVSection" class="grid md:grid-cols-2 gap-4 mt-2">
@@ -103,10 +109,15 @@
             <h3 class="text-lg font-semibold mb-2">Frecuencia por tipo (Set)</h3>
             <canvas id="setTypeFreqDonut" class="bg-white p-2 rounded w-full" height="200"></canvas>
           </div>
-          <div>
+          <div id="setStreaksContainer">
             <h3 class="text-lg font-semibold mb-2">Rachas 30m OUT vs IN (Set)</h3>
             <canvas id="setStreaksDivergent" class="bg-white p-2 rounded w-full" height="200"></canvas>
           </div>
+        </div>
+
+        <div id="setTypeGroupSection" class="mt-2 hidden">
+          <h3 class="text-lg font-semibold mb-2">Análisis por grupo (Set)</h3>
+          <canvas id="setTypeGroupChart" class="bg-white p-2 rounded w-full" height="220"></canvas>
         </div>
 
         <div id="setOtherCards" class="grid md:grid-cols-3 gap-4 mt-2"></div>
@@ -764,15 +775,34 @@
           in_ratio_amount: "% IN por monto (%)",
         },
         coherence: {
+          direction_sign_match_ratio: "Signo vs dirección (ratio) (0–1)",
+          direction_type_match_ratio: "Tipo vs dirección (ratio) (0–1)",
           dir_unknown_count: "Operaciones sin dirección (#)",
           dir_coverage: "Cobertura de dirección (0–1)",
-          in_ratio_count_dir: "IN% (cantidad) por direction (%)",
-          in_ratio_count_type: "IN% (cantidad) por tipo (%)",
-          in_ratio_count_diff: "Δ IN% (cantidad) dir vs tipo (pp)",
-          in_ratio_amount_dir: "IN% (monto) por direction (%)",
-          in_ratio_amount_type: "IN% (monto) por tipo (%)",
-          in_ratio_amount_diff: "Δ IN% (monto) dir vs tipo (pp)",
-          n_rows_used_for_type: "Filas con tipo mapeable (#)",
+        },
+        risk_flags: {
+          burst_behavior: "Comportamiento en ráfagas",
+          high_anomaly_rate: "Alta tasa de anomalías",
+          high_duplication: "Alta duplicación",
+          low_amount_high_frequency: "Monto bajo / alta frecuencia",
+        },
+        trend: {
+          trend_amount: "Tendencia de monto (ratio)",
+          trend_frequency: "Tendencia de frecuencia (ratio)",
+          trend_avg_ticket: "Tendencia de ticket promedio (ratio)",
+        },
+        derived_features: {
+          avg_in: "Promedio IN ($)",
+          avg_out: "Promedio OUT ($)",
+          avg_ticket: "Ticket promedio ($)",
+          entropy_type: "Entropía por tipo",
+          entropy_group: "Entropía por grupo",
+          net_flow_ratio: "Ratio flujo neto",
+          duplication_rate: "Tasa de duplicados",
+          in_out_ratio_count: "Ratio IN/OUT por cantidad",
+          in_out_ratio_amount: "Ratio IN/OUT por monto",
+          dominant_group_by_count: "Grupo dominante (cantidad)",
+          dominant_group_by_amount: "Grupo dominante (monto)",
         },
       };
 
@@ -857,7 +887,6 @@
       }
 
       function renderGeneral(general) {
-        // limpia general containers
         const gTop = document.getElementById('generalTopCards');
         const gOther = document.getElementById('generalOtherCards');
         if (gTop) gTop.innerHTML = '';
@@ -865,143 +894,197 @@
 
         setTierMeta(general);
 
-        // Totals como cards + Operaciones
-        const totals = general.totals || {};
-        const flow = general.flow || {};
-        const ops = (typeof totals.n_trx === 'number') ? totals.n_trx : (
-          (typeof flow.n_in === 'number' && typeof flow.n_out === 'number') ? (flow.n_in + flow.n_out) : null
-        );
+        // Nuevo formato: totals en sets.global_set; viejo formato: totals en raíz
+        const globalSet = general.sets?.global_set || {};
+        const totals = (Object.keys(globalSet).length ? globalSet.totals : null) || general.totals || {};
+        const flow = globalSet.flow || general.flow || {};
+        const nTrx = totals.n_trx ?? globalSet.n_trx ?? general.n_trx;
+        const ops = (typeof nTrx === 'number') ? nTrx :
+          ((typeof flow.n_in === 'number' && typeof flow.n_out === 'number') ? (flow.n_in + flow.n_out) : null);
+
         if (ops != null) addTopCard('generalTopCards', 'Operaciones', ops, ICONS.operaciones, 'text-blue-500');
         if (typeof totals.sum_in === 'number') addTopCard('generalTopCards', 'Ingresos', totals.sum_in, ICONS.ingresos, 'text-green-500');
         if (typeof totals.sum_out === 'number') addTopCard('generalTopCards', 'Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
         if (typeof totals.net === 'number') addTopCard('generalTopCards', 'Neto', totals.net, ICONS.neto, 'text-gray-500');
 
+        const gTypeSec = document.getElementById('generalTypeFreqSection');
+        const gStreaksSec = document.getElementById('generalStreaksSection');
+        const gGaugeSec = document.getElementById('generalGaugeSection');
+        if (gTypeSec) gTypeSec.classList.add('hidden');
+        if (gStreaksSec) gStreaksSec.classList.add('hidden');
+        if (gGaugeSec) gGaugeSec.classList.add('hidden');
 
-      // Solo métricas generales especificadas: type_freq, novelty, streaks, flow
-      // Oculta por defecto secciones generales opcionales
-      const gTypeSec = document.getElementById('generalTypeFreqSection');
-      const gStreaksSec = document.getElementById('generalStreaksSection');
-      const gGaugeSec = document.getElementById('generalGaugeSection');
-      if (gTypeSec) gTypeSec.classList.add('hidden');
-      if (gStreaksSec) gStreaksSec.classList.add('hidden');
-      if (gGaugeSec) gGaugeSec.classList.add('hidden');
-
-      if (general.type_freq) {
-        const tfLabels = Object.keys(general.type_freq);
-        const tfValues = tfLabels.map((k) => general.type_freq[k]);
-        chartOn("typeFreqDonut", {
-          type: "doughnut",
-          data: {
-            labels: tfLabels,
-            datasets: [
-              {
-                data: tfValues,
-                backgroundColor: [
-                  "#3b82f6",
-                  "#10b981",
-                  "#f59e0b",
-                  "#ef4444",
-                  "#6366f1",
-                ],
-              },
-            ],
-          },
-          options: { plugins: { legend: { position: "bottom" } } },
-        });
-        if (gTypeSec) gTypeSec.classList.remove('hidden');
-      }
-
-      // Todas las visualizaciones dependen del set seleccionado (renderAll)
-
-      // Streaks generales
-      if (general.streaks) {
-        const s = general.streaks;
-        if (gStreaksSec) gStreaksSec.classList.remove('hidden');
-        const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
-        chartOn("streaksDivergent", {
-          type: "bar",
-          data: {
-            labels: [""],
-            datasets: [
-              {
-                label: "OUT",
-                data: [-(s.max_out_30m || 0)],
-                backgroundColor: "#ef4444",
-              },
-              {
-                label: "IN",
-                data: [s.max_in_30m || 0],
-                backgroundColor: "#10b981",
-              },
-            ],
-          },
-          options: {
-            indexAxis: "y",
-            scales: {
-              x: { min: -maxVal, max: maxVal, ticks: { precision: 0 } },
-              y: { stacked: true, display: false },
+        // type_freq: nuevo formato { tipo: {count, ratio} }, viejo { tipo: N }
+        const typeFreq = globalSet.type_freq || general.type_freq || null;
+        if (typeFreq) {
+          const tfLabels = Object.keys(typeFreq);
+          const tfValues = tfLabels.map((k) => {
+            const v = typeFreq[k];
+            return (v && typeof v === 'object') ? v.count : v;
+          });
+          chartOn("typeFreqDonut", {
+            type: "doughnut",
+            data: {
+              labels: tfLabels,
+              datasets: [{ data: tfValues, backgroundColor: ["#3b82f6","#10b981","#f59e0b","#ef4444","#6366f1","#8b5cf6","#06b6d4"] }],
             },
-            plugins: { legend: { display: false } },
-          },
-        });
-      }
+            options: {
+              plugins: {
+                legend: { position: "bottom" },
+                tooltip: {
+                  callbacks: {
+                    label(ctx) {
+                      const v = typeFreq[ctx.label];
+                      const count = (v && typeof v === 'object') ? v.count : v;
+                      const ratio = (v && typeof v === 'object') ? ` (${(v.ratio * 100).toFixed(1)}%)` : '';
+                      return `${ctx.label}: ${count}${ratio}`;
+                    }
+                  }
+                }
+              }
+            },
+          });
+          if (gTypeSec) gTypeSec.classList.remove('hidden');
+        }
 
-      // Sin tarjeta de Temporal en General (se entiende en los sets)
-
-      // Ocultar tarjetas de Novedad y Flujo en General (no se muestran)
-      // Si a futuro se agregan otras, recuerde quitar la clase 'hidden' cuando se inserten.
+        // Streaks solo en formato viejo
+        if (general.streaks) {
+          const s = general.streaks;
+          if (gStreaksSec) gStreaksSec.classList.remove('hidden');
+          const maxVal = Math.max(s.max_in_30m || 0, s.max_out_30m || 0);
+          chartOn("streaksDivergent", {
+            type: "bar",
+            data: {
+              labels: [""],
+              datasets: [
+                { label: "OUT", data: [-(s.max_out_30m || 0)], backgroundColor: "#ef4444" },
+                { label: "IN", data: [s.max_in_30m || 0], backgroundColor: "#10b981" },
+              ],
+            },
+            options: {
+              indexAxis: "y",
+              scales: { x: { min: -maxVal, max: maxVal, ticks: { precision: 0 } }, y: { stacked: true, display: false } },
+              plugins: { legend: { display: false } },
+            },
+          });
+        }
       }
 
       function renderSet(s, setKey) {
-        // Limpia set containers
         ['setTopCards','setOtherCards'].forEach((id) => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
-        // Destroy charts
-        ['setHourChart','setVelocityBurstChart','setTypeFreqDonut','setStreaksDivergent','setRobustBullet'].forEach((id) => {
+        ['setHourChart','setVelocityBurstChart','setTypeFreqDonut','setStreaksDivergent','setRobustBullet','setTypeGroupChart'].forEach((id) => {
           const c = document.getElementById(id);
           if (c && c._chartInstance) { try { c._chartInstance.destroy(); } catch(e){} }
         });
+        // Reset secciones dinámicas
+        ['setRiskFlags','setAnomaliesSection','setTypeGroupSection'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.innerHTML = ''; el.classList.add('hidden'); }
+        });
+        const trendCard = document.getElementById('setTrendCard');
+        if (trendCard) { trendCard.innerHTML = ''; trendCard.classList.add('hidden'); }
+
         const setLabelEl = document.getElementById('currentSetLabel');
         if (setLabelEl) setLabelEl.textContent = formatSetLabel(setKey || '—');
-        // Ocultar secciones por defecto y reset "No Data"
+
         const secIds = ['setRobustSection','setHVSection','setRecencySection','setTypeStreaksSection'];
         secIds.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+        const streaksContainer = document.getElementById('setStreaksContainer');
+        if (streaksContainer) streaksContainer.classList.add('hidden');
+
         const noDataEl = document.getElementById('setNoData');
         if (noDataEl) noDataEl.classList.add('hidden');
         let hasAny = false;
 
-        // Totals / n_trx cards con chequeos estrictos
+        // ── Top cards ──────────────────────────────────────────────
         const totals = s.totals || {};
         const flow = s.flow || {};
-        const ops = (typeof totals.n_trx === 'number')
-          ? totals.n_trx
-          : (typeof s.n_trx === 'number')
-            ? s.n_trx
-            : (typeof flow.n_in === 'number' && typeof flow.n_out === 'number')
-              ? (flow.n_in + flow.n_out)
-              : null;
+        const nTrx = totals.n_trx ?? s.n_trx;
+        const ops = (typeof nTrx === 'number') ? nTrx :
+          ((typeof flow.n_in === 'number' && typeof flow.n_out === 'number') ? (flow.n_in + flow.n_out) : null);
         if (ops != null) addTopCard('setTopCards','Operaciones', ops, ICONS.operaciones, 'text-blue-500');
-        // Weekend frac como card numérica junto a Operaciones
-        if (s.temporal && typeof s.temporal.weekend_frac === 'number') {
-          const weekendPct = s.temporal.weekend_frac * 100;
-          addTopCard('setTopCards','Fin de semana (%)', weekendPct, ICONS.operaciones, 'text-amber-500');
-        }
-        if (typeof totals.sum_in === 'number') addTopCard('setTopCards','Ingresos', totals.sum_in, ICONS.ingresos, 'text-green-500');
-        if (typeof totals.sum_out === 'number') addTopCard('setTopCards','Egresos', totals.sum_out, ICONS.egresos, 'text-red-500');
-        if (typeof totals.net === 'number') addTopCard('setTopCards','Neto', totals.net, ICONS.neto, 'text-gray-500');
-        const hasTop = (document.getElementById('setTopCards')?.children.length || 0) > 0;
-        if (hasTop) { hasAny = true; }
+        if (s.temporal && typeof s.temporal.weekend_frac === 'number')
+          addTopCard('setTopCards','Fin de semana (%)', s.temporal.weekend_frac * 100, ICONS.operaciones, 'text-amber-500');
+        const sumIn = totals.sum_in ?? s.sum_in;
+        const sumOut = totals.sum_out ?? s.sum_out;
+        const net = totals.net ?? s.net;
+        if (typeof sumIn === 'number') addTopCard('setTopCards','Ingresos', sumIn, ICONS.ingresos, 'text-green-500');
+        if (typeof sumOut === 'number') addTopCard('setTopCards','Egresos', sumOut, ICONS.egresos, 'text-red-500');
+        if (typeof net === 'number') addTopCard('setTopCards','Neto', net, ICONS.neto, 'text-gray-500');
+        if ((document.getElementById('setTopCards')?.children.length || 0) > 0) hasAny = true;
 
+        // ── Risk flags (badges) ────────────────────────────────────
+        if (s.risk_flags && Object.keys(s.risk_flags).length) {
+          const rfEl = document.getElementById('setRiskFlags');
+          if (rfEl) {
+            const rfLabels = LABELS.risk_flags || {};
+            Object.entries(s.risk_flags).forEach(([k, v]) => {
+              const chip = document.createElement('span');
+              chip.className = `inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${v ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`;
+              chip.textContent = (v ? '⚠ ' : '✓ ') + (rfLabels[k] || k.replace(/_/g, ' '));
+              rfEl.appendChild(chip);
+            });
+            rfEl.classList.remove('hidden');
+            hasAny = true;
+          }
+        }
+
+        // ── Robust bullet ──────────────────────────────────────────
         if (s.robust_stats || s.median_abs != null || s.p95_abs != null) {
           renderRobustBullet('setRobustBullet', s, { currency: 'ARS', tx });
           const el = document.getElementById('setRobustSection'); if (el) el.classList.remove('hidden');
           hasAny = true;
         }
 
+        // ── Anomalías + Tendencia ──────────────────────────────────
+        let anomSec = false;
+        if (s.anomalies) {
+          const a = s.anomalies;
+          const card = document.getElementById('setAnomaliesCard');
+          if (card) {
+            const pct = (a.anomaly_rate * 100).toFixed(1);
+            const color = a.anomaly_rate > 0.3 ? 'text-red-600' : (a.anomaly_rate > 0.1 ? 'text-amber-600' : 'text-green-600');
+            card.innerHTML = `<h5 class="text-lg font-semibold mb-2">Anomalías</h5>
+              <p class="text-3xl font-bold ${color} mb-1">${pct}%</p>
+              <p class="text-xs text-gray-400 mb-2">Tasa de anomalías</p>
+              <div class="text-sm space-y-1">
+                <p><span class="font-medium">Cantidad:</span> ${formatNumber(a.n_anomalies)}</p>
+                <p><span class="font-medium">Monto anomalías:</span> ${formatNumber(a.anomaly_amount_sum)}</p>
+                <p><span class="font-medium">% del monto total:</span> ${(a.anomaly_amount_ratio * 100).toFixed(1)}%</p>
+              </div>`;
+            anomSec = true; hasAny = true;
+          }
+        }
+        if (s.trend && (s.trend.trend_amount != null || s.trend.trend_frequency != null)) {
+          const t = s.trend;
+          const card = document.getElementById('setTrendCard');
+          if (card) {
+            const trendArrow = (v) => {
+              if (v == null || !isFinite(v)) return '<span class="text-gray-400">—</span>';
+              const n = parseFloat(v);
+              const arrow = n > 1.1 ? '↑' : (n < 0.9 ? '↓' : '→');
+              const color = n > 1.1 ? 'text-red-500' : (n < 0.9 ? 'text-green-500' : 'text-gray-500');
+              return `<span class="${color} font-bold">${arrow}</span> ${n.toFixed(2)}x`;
+            };
+            card.innerHTML = `<h5 class="text-lg font-semibold mb-2">Tendencia</h5>
+              <div class="text-sm space-y-2">
+                <p><span class="font-medium">Monto:</span> ${trendArrow(t.trend_amount)}</p>
+                <p><span class="font-medium">Frecuencia:</span> ${trendArrow(t.trend_frequency)}</p>
+                <p><span class="font-medium">Ticket promedio:</span> ${trendArrow(t.trend_avg_ticket)}</p>
+              </div>`;
+            card.classList.remove('hidden');
+            anomSec = true; hasAny = true;
+          }
+        }
+        if (anomSec) {
+          const sec = document.getElementById('setAnomaliesSection'); if (sec) sec.classList.remove('hidden');
+        }
+
+        // ── Histograma horario + Velocity ─────────────────────────
         if (s.temporal && s.temporal.hour_hist) {
           const hist = s.temporal.hour_hist;
           const hours = Object.keys(hist).map((h) => parseInt(h)).sort((a,b)=>a-b);
           const counts = hours.map((h) => hist[h]);
-          // Si hay transacción con hora, resaltar bin
           let txHour = null;
           if (tx && tx.created_time) {
             const m = String(tx.created_time).match(/\b(\d{1,2}):(\d{2}):(\d{2})\b/);
@@ -1017,34 +1100,20 @@
           hasAny = true;
         }
 
-        // Nota: se muestra como card en topCards; sin gauge.
-
         if (s.velocity) {
           const v = s.velocity;
-          const labels = ['1m','5m','30m','60m','24h'];
           const to0 = (x) => (Number.isFinite(+x) ? +x : 0);
           const values = [to0(v.max_cnt_1m), to0(v.max_cnt_5m), to0(v.max_cnt_30m), to0(v.max_cnt_60m), to0(v.max_cnt_24h)];
           chartOn('setVelocityBurstChart', {
             type: 'bar',
-            data: { labels, datasets: [{ label: 'Ráfagas', data: values, backgroundColor: '#f59e0b' }] },
+            data: { labels: ['1m','5m','30m','60m','24h'], datasets: [{ label: 'Ráfagas', data: values, backgroundColor: '#f59e0b' }] },
             options: { scales: { y: { beginAtZero: true } } },
           });
           const el = document.getElementById('setHVSection'); if (el) el.classList.remove('hidden');
           hasAny = true;
         }
 
-        if (s.type_freq) {
-          const tfLabels = Object.keys(s.type_freq);
-          const tfValues = tfLabels.map((k) => s.type_freq[k]);
-          chartOn('setTypeFreqDonut', {
-            type: 'doughnut',
-            data: { labels: tfLabels, datasets: [{ data: tfValues, backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444','#6366f1'] }] },
-            options: { plugins: { legend: { position: 'bottom' } } },
-          });
-          const el = document.getElementById('setTypeStreaksSection'); if (el) el.classList.remove('hidden');
-          hasAny = true;
-        }
-
+        // ── Recencia ───────────────────────────────────────────────
         if (s.recency && s.recency.delta_hist) delete s.recency.delta_hist;
         if (s.recency) {
           renderRecencyBullet('setRecencyBullet', s, { title: 'Recencia • Min–Max, P05–P95, IQR y medidas' });
@@ -1052,24 +1121,99 @@
           hasAny = true;
         }
 
+        // ── Frecuencia por tipo (donut) ────────────────────────────
+        if (s.type_freq) {
+          const tfLabels = Object.keys(s.type_freq);
+          // Nuevo formato: { tipo: {count, ratio} }; viejo: { tipo: N }
+          const tfValues = tfLabels.map((k) => {
+            const v = s.type_freq[k];
+            return (v && typeof v === 'object') ? v.count : v;
+          });
+          chartOn('setTypeFreqDonut', {
+            type: 'doughnut',
+            data: { labels: tfLabels, datasets: [{ data: tfValues, backgroundColor: ['#3b82f6','#10b981','#f59e0b','#ef4444','#6366f1','#8b5cf6','#06b6d4'] }] },
+            options: {
+              plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                  callbacks: {
+                    label(ctx) {
+                      const v = s.type_freq[ctx.label];
+                      const count = (v && typeof v === 'object') ? v.count : v;
+                      const ratio = (v && typeof v === 'object') ? ` (${(v.ratio * 100).toFixed(1)}%)` : '';
+                      return `${ctx.label}: ${count}${ratio}`;
+                    }
+                  }
+                }
+              }
+            },
+          });
+          const el = document.getElementById('setTypeStreaksSection'); if (el) el.classList.remove('hidden');
+          hasAny = true;
+        }
+
+        // ── Análisis por grupo (barras dobles) ────────────────────
+        if (s.type_group_analysis) {
+          const tga = s.type_group_analysis;
+          const groups = Object.keys(tga);
+          if (groups.length) {
+            chartOn('setTypeGroupChart', {
+              type: 'bar',
+              data: {
+                labels: groups.map(g => g.replace(/_/g, ' ')),
+                datasets: [
+                  { label: 'Cantidad', data: groups.map(g => tga[g].count), backgroundColor: '#3b82f6', yAxisID: 'y' },
+                  { label: '% monto', data: groups.map(g => parseFloat((tga[g].ratio_amount * 100).toFixed(1))), backgroundColor: '#f59e0b', yAxisID: 'y2' },
+                ],
+              },
+              options: {
+                scales: {
+                  y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Cantidad' } },
+                  y2: { beginAtZero: true, position: 'right', max: 100, title: { display: true, text: '% monto' }, grid: { drawOnChartArea: false } },
+                },
+              },
+            });
+            const el = document.getElementById('setTypeGroupSection'); if (el) el.classList.remove('hidden');
+            hasAny = true;
+          }
+        }
+
+        // ── Rachas (solo formato viejo) ────────────────────────────
         if (s.streaks) {
           const st = s.streaks;
+          if (streaksContainer) streaksContainer.classList.remove('hidden');
           const sec = document.getElementById('setTypeStreaksSection'); if (sec) sec.classList.remove('hidden');
           const maxVal = Math.max(st.max_in_30m || 0, st.max_out_30m || 0);
           chartOn('setStreaksDivergent', {
             type: 'bar',
-            data: { labels: [''], datasets: [ { label: 'OUT', data: [-(st.max_out_30m || 0)], backgroundColor: '#ef4444' }, { label: 'IN', data: [st.max_in_30m || 0], backgroundColor: '#10b981' } ] },
+            data: { labels: [''], datasets: [
+              { label: 'OUT', data: [-(st.max_out_30m || 0)], backgroundColor: '#ef4444' },
+              { label: 'IN', data: [st.max_in_30m || 0], backgroundColor: '#10b981' },
+            ]},
             options: { indexAxis: 'y', scales: { x: { min: -maxVal, max: maxVal, ticks: { precision: 0 } }, y: { stacked: true, display: false } }, plugins: { legend: { display: false } } },
           });
           hasAny = true;
         }
 
-        // Other cards (sin 'Temporal' para evitar duplicar weekend_frac)
+        // ── Other cards ────────────────────────────────────────────
         if (s.robust_stats) addCard('setOtherCards','Estadísticas robustas', s.robust_stats, LABELS.robust_stats);
-        // No listamos Recencia (se muestra con bullet). Quitamos Redondez, Estado y Duplicados.
+        if (s.flow) addCard('setOtherCards','Flujo', s.flow, LABELS.flow);
+        if (s.coherence) addCard('setOtherCards','Coherencia', s.coherence, LABELS.coherence);
+        if (s.roundness) addCard('setOtherCards','Redondez', s.roundness, LABELS.roundness);
+        if (s.duplicates) addCard('setOtherCards','Duplicados', s.duplicates, LABELS.duplicates);
+        if (s.status) addCard('setOtherCards','Estado', s.status, LABELS.status);
         if (s.novelty) addCard('setOtherCards','Novedad', s.novelty, LABELS.novelty);
         if (s.location) addCard('setOtherCards','Ubicación', s.location, LABELS.location);
-        if (s.flow) addCard('setOtherCards','Flujo', s.flow, LABELS.flow);
+        // derived_features: solo campos clave para no saturar
+        if (s.derived_features) {
+          const df = s.derived_features;
+          const subset = {};
+          ['avg_ticket','avg_in','avg_out','entropy_type','entropy_group','net_flow_ratio','duplication_rate','in_out_ratio_count','in_out_ratio_amount','dominant_group_by_count','dominant_group_by_amount'].forEach(k => {
+            if (df[k] != null) subset[k] = df[k];
+          });
+          if (Object.keys(subset).length) addCard('setOtherCards','Features derivadas', subset, LABELS.derived_features);
+        }
+
         const anyCards = (document.getElementById('setTopCards')?.children.length || 0) > 0 || (document.getElementById('setOtherCards')?.children.length || 0) > 0;
         if (!hasAny && !anyCards) {
           if (noDataEl) noDataEl.classList.remove('hidden');
@@ -1082,34 +1226,93 @@
       }
 
       function formatSetLabel(key) {
-        if (key === 'global') return 'Global';
+        if (key === 'global_set' || key === 'global') return 'Global';
         if (key.startsWith('by_direction_')) {
-          const name = key.replace('by_direction_', '');
+          const name = key.replace('by_direction_', '').replace(/_/g, ' ');
           return 'Por dirección: ' + name.charAt(0).toUpperCase() + name.slice(1);
         }
+        if (key.startsWith('by_type_group_outbound.')) {
+          const name = key.replace('by_type_group_outbound.', '').replace(/_/g, ' ');
+          return 'Grupo outbound: ' + name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        if (key.startsWith('by_type_group_')) {
+          const name = key.replace('by_type_group_', '').replace(/_/g, ' ');
+          return 'Por grupo: ' + name.charAt(0).toUpperCase() + name.slice(1);
+        }
         if (key.startsWith('by_type_')) {
-          const name = key.replace('by_type_', '');
+          const name = key.replace('by_type_', '').replace(/_/g, ' ');
           return 'Por tipo: ' + name.charAt(0).toUpperCase() + name.slice(1);
         }
         return key;
       }
-      function selectSet(key) {
-        // button active state
+      function isMetaSet(obj) {
+        if (!obj || typeof obj !== 'object') return false;
+        if ('n_trx' in obj || 'totals' in obj || 'velocity' in obj) return false;
+        const vals = Object.values(obj);
+        return vals.length > 0 && vals.every(v => v && typeof v === 'object' && ('n_trx' in v || 'totals' in v));
+      }
+
+      function selectSet(key, subKey = null) {
         document.querySelectorAll('#sidebarNav [data-set]').forEach((btn) => {
           btn.classList.remove('bg-gray-200', 'text-gray-900');
         });
-        const active = document.querySelector(`#sidebarNav [data-set="${key}"]`);
+        const selector = subKey
+          ? `#sidebarNav [data-set="${key}"][data-subkey="${subKey}"]`
+          : `#sidebarNav [data-set="${key}"]:not([data-subkey])`;
+        const active = document.querySelector(selector);
         if (active) active.classList.add('bg-gray-200', 'text-gray-900');
-        const s = sets[key] || {};
-        renderSet(s, key);
+        const setObj = sets[key] || {};
+        const s = subKey ? (setObj[subKey] || {}) : setObj;
+        const displayKey = subKey ? `${key}.${subKey}` : key;
+        renderSet(s, displayKey);
         try { window.dispatchEvent(new Event('resize')); } catch (e) {}
         if (window.Plotly) {
           try { Plotly.Plots.resize('recencyBullet'); Plotly.Plots.resize('setRecencyBullet'); } catch (e) {}
         }
       }
+      function buildSetButtons(nav, setsObj) {
+        const keys = Object.keys(setsObj || {});
+        keys.sort((a, b) => {
+          if (a === 'global_set' || a === 'global') return -1;
+          if (b === 'global_set' || b === 'global') return 1;
+          return a.localeCompare(b);
+        });
+        keys.forEach((key) => {
+          const setObj = setsObj[key];
+          if (isMetaSet(setObj)) {
+            const label = document.createElement('div');
+            label.className = 'px-4 py-2 text-xs text-gray-400 font-semibold uppercase tracking-wide border-b bg-gray-50';
+            label.textContent = formatSetLabel(key);
+            nav.appendChild(label);
+            Object.keys(setObj).forEach(subKey => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.dataset.set = key;
+              btn.dataset.subkey = subKey;
+              btn.className = 'w-full text-left pl-6 pr-4 py-2 hover:bg-gray-100 text-sm';
+              btn.textContent = subKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              btn.addEventListener('click', () => selectSet(key, subKey));
+              nav.appendChild(btn);
+            });
+          } else {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.dataset.set = key;
+            btn.className = 'w-full text-left px-4 py-2 hover:bg-gray-100';
+            btn.textContent = formatSetLabel(key);
+            btn.addEventListener('click', () => selectSet(key));
+            nav.appendChild(btn);
+          }
+        });
+      }
+
+      function defaultSetKey(setsObj) {
+        const keys = Object.keys(setsObj || {});
+        return keys.includes('global_set') ? 'global_set' : (keys.includes('global') ? 'global' : (keys[0] || null));
+      }
+
       function setupSidebar() {
         const nav = document.getElementById('sidebarNav');
-        // Cargar datos button
         const loadBtn = document.createElement('button');
         loadBtn.type = 'button';
         loadBtn.id = 'openLoadBtn';
@@ -1117,21 +1320,10 @@
         loadBtn.textContent = 'Cargar datos';
         nav.appendChild(loadBtn);
 
-        const keys = Object.keys(sets || {});
-        keys.sort((a, b) => (a === 'global' ? -1 : b === 'global' ? 1 : a.localeCompare(b)));
-        keys.forEach((key) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.dataset.set = key;
-          btn.className = 'w-full text-left px-4 py-2 hover:bg-gray-100';
-          btn.textContent = formatSetLabel(key);
-          btn.addEventListener('click', () => selectSet(key));
-          nav.appendChild(btn);
-        });
-        // Render general first (usa métricas de nivel raíz)
+        buildSetButtons(nav, sets);
         renderGeneral(data || {});
-        const defaultKey = keys.includes('global') ? 'global' : (keys[0] || null);
-        if (defaultKey) selectSet(defaultKey);
+        const dk = defaultSetKey(sets);
+        if (dk) selectSet(dk);
       }
       setupSidebar();
 
@@ -1189,22 +1381,10 @@
             if (rawPre) rawPre.innerHTML = syntaxHighlight(rawData);
             // Reconstruye botones de sets
             const nav = document.getElementById('sidebarNav');
-            // El primer hijo es el botón Cargar datos; preservarlo
             while (nav.children.length > 1) nav.removeChild(nav.lastChild);
-            const keys = Object.keys(sets);
-            keys.sort((a, b) => (a === 'global' ? -1 : b === 'global' ? 1 : a.localeCompare(b)));
-            keys.forEach((key) => {
-              const btn = document.createElement('button');
-              btn.type = 'button';
-              btn.dataset.set = key;
-              btn.className = 'w-full text-left px-4 py-2 hover:bg-gray-100';
-              btn.textContent = formatSetLabel(key);
-              btn.addEventListener('click', () => selectSet(key));
-              nav.appendChild(btn);
-            });
-            // Render por defecto
-            const defaultKey = keys.includes('global') ? 'global' : (keys[0] || null);
-            if (defaultKey) selectSet(defaultKey);
+            buildSetButtons(nav, sets);
+            const dk = defaultSetKey(sets);
+            if (dk) selectSet(dk);
             closeModal();
           } catch (e) {
             errorEl.textContent = 'JSON inválido en Features: ' + (e?.message || e);
